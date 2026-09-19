@@ -87,3 +87,16 @@ def test_output_is_lon_lat_degrees():
     lon, lat = fc["features"][0]["geometry"]["coordinates"][0][0]
     assert -180 <= lon <= 180 and -90 <= lat <= 90
     assert lon < 0 < lat, "coordinates must be [lon, lat] in CONUS"
+
+
+def test_iou_endpoints():
+    from backend.fire.validate import iou
+
+    a = np.zeros((4, 4), bool)
+    a[:2] = True
+    b = np.zeros((4, 4), bool)
+    b[2:] = True
+    assert iou(a, a) == 1.0
+    assert iou(a, b) == 0.0
+    assert iou(a, a | b) == 0.5
+    assert iou(np.zeros((4, 4), bool), np.zeros((4, 4), bool)) == 0.0

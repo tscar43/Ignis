@@ -11,11 +11,13 @@ in bands_to_geojson, at the very end.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from heapq import heappop, heappush
 
 import numpy as np
 import rasterio.features
+from affine import Affine
 from pyproj import Transformer
 from shapely.geometry import mapping, shape
 from shapely.ops import transform as shapely_transform
@@ -193,13 +195,34 @@ def _round_coords(geojson: dict, ndigits: int) -> dict:
     return geojson
 
 
-def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
-                 use_fuel: bool = True, use_slope: bool = True,
-                 peak_window_h: int = 8) -> dict:
-    """The whole contract, in one call. This is what the endpoint returns.
+@dataclass(frozen=True)
+class Scene:
+    """Observations and layers for one moment, fetched once.
 
-    `when=None` is live: NRT hotspots and current NWS wind. A datetime is
-    replay: the SP archive and reanalysis wind for that hour.
+    Split out of risk_payload so an ensemble can run several models against
+    the same seed, wind and rasters instead of refetching per model.
+    """
+
+    ignition: np.ndarray
+    codes: np.ndarray
+    propensity: np.ndarray
+    slope: np.ndarray
+    transform: Affine
+    wind: nws.Wind
+    seed: list
+    seed_time: datetime
+
+    @property
+    def cell_m(self) -> float:
+        return self.transform.a
+
+
+def gather(bbox=DEMO_BBOX, when: datetime | None = None,
+           peak_window_h: int = 8) -> Scene:
+    """Everything a spread model needs for `bbox` at `when` (None = live).
+
+    Both derived layers are always built -- the rasters are disk-cached, and a
+    model that wants the wind-only baseline just passes None to arrival_times.
     """
     live_mode = when is None
     hotspots = firms.fetch_many(
@@ -226,32 +249,50 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
             else nws.archived(lat, lon, seed_time, peak_window_h=peak_window_h))
 
     codes, profile = landfire.fetch("fuel", bbox=bbox)
-    propensity = landfire.fuel_factor(codes) if use_fuel else None
-    slope = None
-    if use_slope:
-        slope = terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
-                                      landfire.fetch("aspect", bbox=bbox)[0],
-                                      NEIGHBOURS)
-    ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
-    arrival = arrival_times(ignition, wind.speed_kmh, wind.toward_deg,
-                            cell_m=profile["transform"].a, propensity=propensity,
-                            slope=slope)
-    bands = bands_to_geojson(arrival, profile["transform"])
+    return Scene(
+        ignition=seed_from_hotspots(seed, profile["transform"], codes.shape),
+        codes=codes,
+        propensity=landfire.fuel_factor(codes),
+        slope=terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
+                                   landfire.fetch("aspect", bbox=bbox)[0],
+                                   NEIGHBOURS),
+        transform=profile["transform"], wind=wind, seed=seed, seed_time=seed_time)
 
-    burned = codes[np.isfinite(arrival)]
+
+def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
+    """The contract payload around an already-polygonized set of bands."""
+    burned = scene.codes[np.isfinite(arrival)]
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "data_as_of": {"firms": firms.iso(seed_time), "weather": wind.observed_at},
-        "fire_points": firms.to_feature_collection(seed),
+        "data_as_of": {"firms": firms.iso(scene.seed_time),
+                       "weather": scene.wind.observed_at},
+        "fire_points": firms.to_feature_collection(scene.seed),
         "risk_polygons": bands["risk_polygons"],
         "summary": {
-            "wind_speed_kmh": wind.speed_kmh,
-            "wind_toward_deg": round(wind.toward_deg),
-            "primary_spread_direction": wind.compass,
+            "wind_speed_kmh": scene.wind.speed_kmh,
+            "wind_toward_deg": round(scene.wind.toward_deg),
+            "primary_spread_direction": scene.wind.compass,
             "dominant_fuels": landfire.dominant_fuels(burned),
             "area_km2": bands["area_km2"],
         },
     }
+
+
+def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
+                 use_fuel: bool = True, use_slope: bool = True,
+                 peak_window_h: int = 8) -> dict:
+    """The whole contract, in one call. This is what the endpoint returns.
+
+    `when=None` is live: NRT hotspots and current NWS wind. A datetime is
+    replay: the SP archive and reanalysis wind for that hour.
+    """
+    scene = gather(bbox=bbox, when=when, peak_window_h=peak_window_h)
+    arrival = arrival_times(
+        scene.ignition, scene.wind.speed_kmh, scene.wind.toward_deg,
+        cell_m=scene.cell_m,
+        propensity=scene.propensity if use_fuel else None,
+        slope=scene.slope if use_slope else None)
+    return assemble(scene, bands_to_geojson(arrival, scene.transform), arrival)
 
 
 def replay(start: datetime, offsets_h=(0, 1, 3, 6), bbox=DEMO_BBOX, **kwargs) -> list[dict]:
