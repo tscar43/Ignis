@@ -1,1 +1,1 @@
-"""Routing package: road graph, edge risk scoring, route computation."""
+"""Offline road routing and exposure scoring."""

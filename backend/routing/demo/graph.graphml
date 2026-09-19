@@ -1,0 +1,143 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d7" for="edge" attr.name="geometry" attr.type="string" />
+  <key id="d6" for="edge" attr.name="name" attr.type="string" />
+  <key id="d5" for="edge" attr.name="travel_time" attr.type="long" />
+  <key id="d4" for="edge" attr.name="length" attr.type="double" />
+  <key id="d3" for="node" attr.name="y" attr.type="double" />
+  <key id="d2" for="node" attr.name="x" attr.type="double" />
+  <key id="d1" for="graph" attr.name="source" attr.type="string" />
+  <key id="d0" for="graph" attr.name="crs" attr.type="string" />
+  <graph edgedefault="directed">
+    <node id="origin">
+      <data key="d2">-121.62</data>
+      <data key="d3">39.76</data>
+    </node>
+    <node id="direct">
+      <data key="d2">-121.6</data>
+      <data key="d3">39.76</data>
+    </node>
+    <node id="east">
+      <data key="d2">-121.58</data>
+      <data key="d3">39.76</data>
+    </node>
+    <node id="southwest">
+      <data key="d2">-121.62</data>
+      <data key="d3">39.74</data>
+    </node>
+    <node id="southeast">
+      <data key="d2">-121.58</data>
+      <data key="d3">39.74</data>
+    </node>
+    <node id="north">
+      <data key="d2">-121.58</data>
+      <data key="d3">39.78</data>
+    </node>
+    <node id="far_east">
+      <data key="d2">-121.56</data>
+      <data key="d3">39.76</data>
+    </node>
+    <node id="far_north">
+      <data key="d2">-121.58</data>
+      <data key="d3">39.8</data>
+    </node>
+    <edge source="origin" target="direct" id="0">
+      <data key="d4">1713.8412906853619</data>
+      <data key="d5">120</data>
+      <data key="d6">Demo Central Road</data>
+      <data key="d7">LINESTRING (-121.62 39.76, -121.6 39.76)</data>
+    </edge>
+    <edge source="origin" target="southwest" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo South Road</data>
+      <data key="d7">LINESTRING (-121.62 39.76, -121.62 39.74)</data>
+    </edge>
+    <edge source="direct" target="origin" id="0">
+      <data key="d4">1713.8412906853619</data>
+      <data key="d5">120</data>
+      <data key="d6">Demo Central Road</data>
+      <data key="d7">LINESTRING (-121.6 39.76, -121.62 39.76)</data>
+    </edge>
+    <edge source="direct" target="east" id="0">
+      <data key="d4">1713.8412906841445</data>
+      <data key="d5">120</data>
+      <data key="d6">Demo Central Road</data>
+      <data key="d7">LINESTRING (-121.6 39.76, -121.58 39.76)</data>
+    </edge>
+    <edge source="east" target="direct" id="0">
+      <data key="d4">1713.8412906841445</data>
+      <data key="d5">120</data>
+      <data key="d6">Demo Central Road</data>
+      <data key="d7">LINESTRING (-121.58 39.76, -121.6 39.76)</data>
+    </edge>
+    <edge source="east" target="southeast" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo East Road</data>
+      <data key="d7">LINESTRING (-121.58 39.76, -121.58 39.74)</data>
+    </edge>
+    <edge source="east" target="north" id="0">
+      <data key="d4">2220.6043185605954</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo North Road</data>
+      <data key="d7">LINESTRING (-121.58 39.76, -121.58 39.78)</data>
+    </edge>
+    <edge source="east" target="far_east" id="0">
+      <data key="d4">1713.8412906841445</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Extension</data>
+      <data key="d7">LINESTRING (-121.58 39.76, -121.56 39.76)</data>
+    </edge>
+    <edge source="southwest" target="origin" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo South Road</data>
+      <data key="d7">LINESTRING (-121.62 39.74, -121.62 39.76)</data>
+    </edge>
+    <edge source="southwest" target="southeast" id="0">
+      <data key="d4">3428.6738624306654</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Bypass</data>
+      <data key="d7">LINESTRING (-121.62 39.74, -121.58 39.74)</data>
+    </edge>
+    <edge source="southeast" target="southwest" id="0">
+      <data key="d4">3428.6738624306654</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Bypass</data>
+      <data key="d7">LINESTRING (-121.58 39.74, -121.62 39.74)</data>
+    </edge>
+    <edge source="southeast" target="east" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo East Road</data>
+      <data key="d7">LINESTRING (-121.58 39.74, -121.58 39.76)</data>
+    </edge>
+    <edge source="north" target="east" id="0">
+      <data key="d4">2220.6043185605954</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo North Road</data>
+      <data key="d7">LINESTRING (-121.58 39.78, -121.58 39.76)</data>
+    </edge>
+    <edge source="north" target="far_north" id="0">
+      <data key="d4">2220.611994347977</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo North Road</data>
+      <data key="d7">LINESTRING (-121.58 39.78, -121.58 39.8)</data>
+    </edge>
+    <edge source="far_east" target="east" id="0">
+      <data key="d4">1713.8412906841445</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Extension</data>
+      <data key="d7">LINESTRING (-121.56 39.76, -121.58 39.76)</data>
+    </edge>
+    <edge source="far_north" target="north" id="0">
+      <data key="d4">2220.611994347977</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo North Road</data>
+      <data key="d7">LINESTRING (-121.58 39.8, -121.58 39.78)</data>
+    </edge>
+    <data key="d0">epsg:4326</data>
+    <data key="d1">synthetic demonstration</data>
+  </graph>
+</graphml>

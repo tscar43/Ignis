@@ -41,3 +41,7 @@ node_modules/
 !demo_data/graph.graphml
 htmlcov/
 .coverage
+
+# Small backend-owned synthetic routing fixture
+!backend/routing/demo/graph.graphml
+cache/

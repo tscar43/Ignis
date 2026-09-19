@@ -1,0 +1,38 @@
+[
+  {
+    "id": "shelter_01",
+    "name": "Demo shelter 1 (fictional)",
+    "lon": -121.58,
+    "lat": 39.76,
+    "accepts_pets": true,
+    "accessible": true,
+    "capacity": 100
+  },
+  {
+    "id": "shelter_02",
+    "name": "Demo shelter 2 (fictional)",
+    "lon": -121.58,
+    "lat": 39.78,
+    "accepts_pets": false,
+    "accessible": true,
+    "capacity": 200
+  },
+  {
+    "id": "shelter_03",
+    "name": "Demo shelter 3 (fictional)",
+    "lon": -121.56,
+    "lat": 39.76,
+    "accepts_pets": true,
+    "accessible": false,
+    "capacity": 300
+  },
+  {
+    "id": "shelter_04",
+    "name": "Demo shelter 4 (fictional)",
+    "lon": -121.58,
+    "lat": 39.8,
+    "accepts_pets": true,
+    "accessible": true,
+    "capacity": 400
+  }
+]

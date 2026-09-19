@@ -102,3 +102,18 @@ CORS is enabled for `http://localhost:5173` and `http://localhost:3000`.
 # from the repo root
 .venv/Scripts/python -m pytest
 ```
+
+## API integration update (supersedes the endpoint status above)
+
+The HTTP API now consumes the merged fire engine. See
+[backend/api/README.md](backend/api/README.md) for current setup and behavior.
+GET /fire supports demo, live (5-minute cache with last-good fallback), and
+replay modes. GET /scenario/{t} serves the four published fire replay frames.
+Fire payloads retain their exact contract and additive fields.
+
+Routing currently uses isolated synthetic road/shelter fixtures under
+backend/routing/demo/. It still needs a real road cache and approved shelters;
+the default origin has no eligible route under the published demo hazards.
+The API returns 422 in that case. POST /chat awaits the frontend-owned agent.
+
+Run ./.venv/Scripts/python.exe -m pytest -q to check the integration offline.

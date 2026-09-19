@@ -1,1 +1,1 @@
-"""Shelter data and household-constraint filtering."""
+"""Shelter catalogue and household constraints."""

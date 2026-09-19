@@ -1,1 +1,1 @@
-"""Wildfire Evacuation Intelligence Agent - backend package."""
+"""Ignis evacuation routing demo."""
