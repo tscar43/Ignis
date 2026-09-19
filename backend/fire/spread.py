@@ -24,7 +24,7 @@ from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
 
 from ..weather import nws
-from . import contract, firms, landfire, terrain
+from . import contract, firms, goes, landfire, terrain
 from .firms import DEMO_BBOX
 
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
@@ -78,6 +78,7 @@ def arrival_times(
     slope: np.ndarray | None = None,
     horizon_min: float = max(BANDS.values()),
     r0: float = R0_M_PER_MIN,
+    step_factors: list[float] | None = None,
 ) -> np.ndarray:
     """Minutes until fire reaches each cell. Unreached cells come back inf.
 
@@ -85,11 +86,16 @@ def arrival_times(
     propensity 0 is a hard barrier and is never entered. `slope` is F_slope as
     (len(NEIGHBOURS), rows, cols) -- directional, so it cannot fold into
     `propensity`. Both None gives the wind-only baseline.
+
+    `step_factors` replaces this module's wind shape with one supplied per
+    NEIGHBOURS direction, which is how `elliptical.py` runs the FARSITE-class
+    baseline through the same solver. None keeps the cos^3 form.
     """
     if propensity is None:
         propensity = np.ones(ignition.shape, dtype="float32")
     rows, cols = ignition.shape
-    wind = _step_propensity(wind_kmh, wind_toward_deg)
+    wind = (_step_propensity(wind_kmh, wind_toward_deg)
+            if step_factors is None else step_factors)
     lengths = [cell_m * math.hypot(dr, dc) for dr, dc in NEIGHBOURS]
 
     arrival = np.full(ignition.shape, np.inf, dtype="float64")
@@ -118,11 +124,14 @@ def arrival_times(
     return arrival
 
 
-def seed_from_hotspots(hotspots, transform, shape_, pixel_m: float = 375.0):
-    """Ignition mask from FIRMS points.
+def seed_from_hotspots(hotspots, transform, shape_):
+    """Ignition mask from satellite detections.
 
-    A detection is a ~375 m VIIRS pixel, not a point, so mark every cell within
-    half a pixel of it rather than the single cell it lands in.
+    A detection is a pixel, not a point, so mark every cell within half a pixel
+    of it rather than the single cell it lands in. The size is per hotspot:
+    VIIRS is 375 m, a GOES ABI cell is kilometres, and a seed that ignores the
+    difference either loses the ABI detection entirely or inflates the VIIRS
+    footprint to match it.
     """
     to_albers = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
     xs, ys = to_albers.transform([h.lon for h in hotspots], [h.lat for h in hotspots])
@@ -130,8 +139,8 @@ def seed_from_hotspots(hotspots, transform, shape_, pixel_m: float = 375.0):
     rows = ((np.array(ys) - transform.f) / transform.e).astype(int)
 
     mask = np.zeros(shape_, dtype=bool)
-    reach = max(1, int(round(pixel_m / 2 / abs(transform.a))))
-    for row, col in zip(rows, cols):
+    for row, col, hotspot in zip(rows, cols, hotspots):
+        reach = max(1, int(round(hotspot.pixel_m / 2 / abs(transform.a))))
         if 0 <= row < shape_[0] and 0 <= col < shape_[1]:
             mask[max(0, row - reach):row + reach + 1,
                  max(0, col - reach):col + reach + 1] = True
@@ -242,6 +251,22 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
         raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
     seed_time = max(available)
     seed = [h for h in hotspots if h.acq_time == seed_time]
+
+    # Live only: add the newest GOES ABI frame, scanned minutes ago rather than
+    # hours. Union rather than replace -- ABI sees only the hottest cores, so
+    # alone it would shrink the footprint, while VIIRS alone freezes it at the
+    # last overpass.
+    #
+    # This does not reopen the "seed from one pass" trap. That one was about
+    # projecting a whole day of VIIRS passes, which re-runs the same growth
+    # from the origin. Arrival time is a minimum over paths, so a seed inside
+    # the envelope contributes nothing; only the outer edge moves, and the ABI
+    # frame is the one observation entitled to move it.
+    if live_mode:
+        fresh = goes.fetch(bbox)
+        if fresh:
+            seed = seed + fresh
+            seed_time = max(seed_time, fresh[0].acq_time)
 
     lat = (bbox[1] + bbox[3]) / 2
     lon = (bbox[0] + bbox[2]) / 2
