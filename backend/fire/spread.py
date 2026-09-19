@@ -24,7 +24,7 @@ from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
 
 from ..weather import nws
-from . import firms, landfire, terrain
+from . import contract, firms, landfire, terrain
 from .firms import DEMO_BBOX
 
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
@@ -292,7 +292,11 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
         cell_m=scene.cell_m,
         propensity=scene.propensity if use_fuel else None,
         slope=scene.slope if use_slope else None)
-    return assemble(scene, bands_to_geojson(arrival, scene.transform), arrival)
+    # Fail here rather than shipping bad polygons to an evacuation UI. The
+    # guard is on this path only, not in assemble(), so it cannot break the
+    # ensemble while that is still being written.
+    return contract.check(
+        assemble(scene, bands_to_geojson(arrival, scene.transform), arrival))
 
 
 def replay(start: datetime, offsets_h=(0, 1, 3, 6), bbox=DEMO_BBOX, **kwargs) -> list[dict]:
