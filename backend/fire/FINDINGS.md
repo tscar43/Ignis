@@ -1,20 +1,17 @@
-# Fire engine: state and findings
+# Fire engine: what the experiments settled
 
-Orientation for a new session. Detail lives in commit messages and module
-docstrings; this file only says where it is and what is already settled.
+What a new session needs before touching the model: which questions are
+already answered, so nobody re-runs a dead end. `AGENTS.md` is the rules,
+`README.md` is the current state, this is the evidence.
 
-## Where it stands (2026-09-19)
+Detail lives in commit messages and in `validate.py`'s docstring. This file
+points at it rather than restating it, so the two can't drift.
 
-All nine milestones from the role brief are committed on `fire-engine`
-(`fb4e0b0`..`067c9b0`) and pushed. `spread.risk_payload()` is the contract
-payload, built from live FIRMS / LANDFIRE / NWS. Replay frames, the fuel
-overlay and IoU validation all run against real data, not fixtures.
+## The ablation
 
-## The validation result, and what is already ruled out
-
-`python -m backend.fire.validate` scores the ablation on two fires. Read
-`validate.py`'s docstring before touching the model -- it records the dead
-ends so nobody re-runs one. Growth-only IoU:
+`python -m backend.fire.validate` scores wind-only against wind+fuel and
+wind+fuel+slope, on two fires, each variant calibrated separately. Growth-only
+IoU:
 
 ```
                         Camp 2018-11-09       Dixie 2021-07-16
@@ -25,37 +22,43 @@ ends so nobody re-runs one. Growth-only IoU:
 ```
 
 - **Fuel and slope do not improve IoU on either fire.** Wind alone wins at the
-  ~10 h horizon on both. Say this openly; do not claim otherwise in the pitch.
+  ~10 h horizon on both. Say so openly; do not claim otherwise in the pitch.
 - **The regime explanation is dead.** Camp suggested the terms lose because a
   35 km/h fire is wind-driven rather than fuel-limited. Dixie's first week
-  tested it -- same canyon 10 km upriver, same terrain and fuel vintage and
-  ERA5 cell, 13 km/h instead of 35 -- and the ordering did not reverse.
+  tested exactly that -- same canyon 10 km upriver, sharing terrain, fuel
+  vintage and ERA5 cell, at 13 km/h instead of 35 -- and the ordering did not
+  reverse. Whatever costs the fuel term IoU is not regime-specific.
 - **Slope earns its place at short range in steep ground.** Dixie +1.7 h is the
   one case the full model wins (0.259 vs 0.232), and slope carries it: fuel
   alone scores worse than no fuel.
-- **Also ruled out:** unfair calibration (each variant gets its own R0), urban
-  as a hard barrier (moved IoU by 0.001), and fuel vintage on Dixie (mean
-  F_fuel 0.527 LF2016 vs 0.531 LF2022 inside the footprint).
+- **Already ruled out:** unfair calibration (each variant gets its own R0),
+  urban as a hard barrier (moved IoU by 0.001), and fuel vintage on Dixie
+  (mean F_fuel 0.527 LF2016 vs 0.531 LF2022 inside the observed footprint,
+  though 64% of individual cells disagree).
 - **Leading untested suspect:** calibration. `F_fuel <= 1` averaging ~0.5 forces
-  R0 up 2-3x, so fuel runs drive grass corridors at near-full rate while timber
-  lags. Testing it needs a shape metric, not IoU.
+  R0 up 2-3x (Camp 9.8 -> 27, Dixie 22 -> 48), so fuel runs drive grass
+  corridors at near-full rate while timber lags. A spikier footprint may score
+  worse against a 375 m detection mask than a smooth wind ellipse. Testing it
+  needs a shape metric, not IoU.
 
 Keep the fuel and slope terms regardless: they are what make barriers and
 terrain visible, which the contract's consumers need.
 
+## Ground truth, and why the absolute numbers are low
+
+Truth is the union of FIRMS detections up to the validation time, not a NIFC
+perimeter. A detection is an *actively burning* pixel, so cells that burned and
+cooled drop out and the observed footprint understates burned area. Absolute
+IoU is therefore pessimistic; the ablation is the honest comparison because the
+bias applies to every configuration equally.
+
 ## Open, deliberately not started
 
-- `contracts/` is empty, though `AGENTS.md` and `demo_data/README.md` both
-  point teammates at it. A schema there would close the dangling reference.
-- No HTTP endpoint exists anywhere in the repo. The brief asks for one, but
-  the backend teammate may want to own the app entry point -- ask before
-  building it. `risk_payload()` also refetches everything per call, so an
-  endpoint needs a TTL cache to be usable live.
-- `magi.py` (three-model ensemble over the same contract) is in flight in a
-  separate session as of 2026-09-19. Leave it and `tests/test_magi.py` alone.
-
-## Lane
-
-Only `backend/fire/`, `backend/weather/`, `demo_data/risk_*`, and
-`fuel_overlay.png`. `contracts/` is shared -- agree with the team first. See
-`AGENTS.md` for the rest of the rules.
+- **`contracts/` is still empty**, though `AGENTS.md` and `demo_data/README.md`
+  both point teammates at it. `backend/fire/contract.py` is the checkable
+  version, proposed for that directory once the team agrees -- shared, so not
+  moved unilaterally.
+- **No HTTP endpoint exists** anywhere in the repo. The brief asks for one, but
+  the backend teammate may want to own the app entry point, so ask first.
+  `risk_payload()` also refetches everything per call; an endpoint needs a TTL
+  cache to be usable live.
