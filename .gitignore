@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Large geospatial data -- never commit rasters
+*.tif
+*.tiff
+*.img
+*.bil
+*.hdr
+*.vrt
+*.zip
+*.gdb/
+data_raw/
+backend/fire/cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
