@@ -11,7 +11,7 @@ in bands_to_geojson, at the very end.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from heapq import heappop, heappush
 
 import numpy as np
@@ -137,42 +137,60 @@ def seed_from_hotspots(hotspots, transform, shape_, pixel_m: float = 375.0):
 
 
 def bands_to_geojson(arrival: np.ndarray, transform, simplify_m: float = 60.0,
-                     close_m: float = 150.0) -> dict:
+                     close_m: float = 150.0, ndigits: int = 6) -> dict:
     """The contract's `risk_polygons`, cumulative and in EPSG:4326.
 
     `close_m` is a morphological closing. Seeding from satellite pixels leaves
     a lattice of pinholes between detections, which polygonizes into a hundred
     ragged rings the frontend then has to draw. Closing merges them.
+
+    Coordinates are snapped to `ndigits` (~0.1 m) before the final union, not
+    after: snapping a union's intersection vertices moves them off the inner
+    band's edge and breaks the nesting Backend's scoring assumes.
     """
     to_wgs = Transformer.from_crs("EPSG:5070", "EPSG:4326", always_xy=True).transform
-    out, previous, areas = {}, None, {}
 
+    # Pass 1: polygonize in metres, cumulative.
+    projected, previous, areas = {}, None, {}
     for name, minutes in BANDS.items():
         mask = arrival <= minutes
         pieces = [shape(geom) for geom, value in rasterio.features.shapes(
             mask.astype("uint8"), mask=mask, transform=transform) if value == 1]
         geom = (unary_union(pieces).buffer(close_m).buffer(-close_m)
-                .simplify(simplify_m).buffer(0)) if pieces else None
-
+                .simplify(simplify_m).buffer(0)) if pieces else previous
         if geom is not None and previous is not None:
             geom = unary_union([geom, previous])  # simplify() can bite into the inner band
-        elif geom is None:
-            geom = previous
         previous = geom
+        projected[name] = geom
         areas[name] = round(geom.area / 1e6, 1) if geom else 0.0
-        out[name] = _feature_collection(geom, to_wgs, name)
+
+    # Pass 2: reproject, snap, then re-union so nesting survives the rounding.
+    out, previous = {}, None
+    for name in BANDS:
+        geom = projected[name]
+        if geom is None or geom.is_empty:
+            out[name] = {"type": "FeatureCollection", "features": []}
+            continue
+        geom = shape(_round_coords(mapping(shapely_transform(to_wgs, geom)), ndigits))
+        if previous is not None:
+            geom = unary_union([geom, previous])
+        previous = geom
+        parts = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+        out[name] = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": mapping(part),
+             "properties": {"band": name}} for part in parts]}
 
     return {"risk_polygons": out, "area_km2": areas}
 
 
-def _feature_collection(geom, to_wgs, name: str) -> dict:
-    if geom is None or geom.is_empty:
-        return {"type": "FeatureCollection", "features": []}
-    wgs = shapely_transform(to_wgs, geom)
-    parts = list(wgs.geoms) if wgs.geom_type == "MultiPolygon" else [wgs]
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": mapping(p), "properties": {"band": name}}
-        for p in parts]}
+def _round_coords(geojson: dict, ndigits: int) -> dict:
+    def walk(coords):
+        if isinstance(coords[0], (int, float)):
+            return [round(v, ndigits) for v in coords]
+        return [walk(part) for part in coords]
+
+    geojson["coordinates"] = walk(geojson["coordinates"])
+    return geojson
 
 
 def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
@@ -185,15 +203,21 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
     """
     live_mode = when is None
     hotspots = firms.fetch_many(
-        firms.LIVE_SOURCES if live_mode else firms.ARCHIVE_SOURCES,
-        bbox=bbox, start_date=None if live_mode else when.date(), days=1)
-    if not hotspots:
-        raise RuntimeError(f"no hotspots in {bbox} for {when or 'the latest pass'}")
+        firms.LIVE_SOURCES if live_mode else firms.ARCHIVE_SOURCES, bbox=bbox,
+        # Replay starts a day early: at 01:50 the newest pass is still
+        # yesterday evening's, and fetching only `when`'s date would miss it.
+        start_date=None if live_mode else when.date() - timedelta(days=1),
+        days=1 if live_mode else 2)
 
     # Seed from one satellite pass, not all of them: older detections are
-    # already-burned area, and seeding them projects the fire twice.
-    seed_time = max(h.acq_time for h in hotspots) if live_mode else min(
-        (h.acq_time for h in hotspots if h.acq_time >= when), default=None)
+    # already-burned area, and seeding them projects the fire twice. Replay
+    # uses the newest pass *at or before* `when`, which is all a live system
+    # would have known at that moment -- often hours stale, which is the point.
+    available = [h.acq_time for h in hotspots
+                 if live_mode or h.acq_time <= when]
+    if not available:
+        raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
+    seed_time = max(available)
     seed = [h for h in hotspots if h.acq_time == seed_time]
 
     lat = (bbox[1] + bbox[3]) / 2
@@ -230,12 +254,41 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
     }
 
 
+def replay(start: datetime, offsets_h=(0, 1, 3, 6), bbox=DEMO_BBOX, **kwargs) -> list[dict]:
+    """One payload per offset, as the system would have answered at that hour.
+
+    Each frame re-seeds from whatever pass was newest then, so the frames show
+    observation staleness as well as fire growth.
+    """
+    frames = []
+    for hours in offsets_h:
+        at = start + timedelta(hours=hours)
+        frame = risk_payload(bbox=bbox, when=at, **kwargs)
+        frame["replay"] = {"offset_h": hours,
+                           "at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        frames.append(frame)
+    return frames
+
+
 if __name__ == "__main__":
     import json
     import sys
+    from pathlib import Path
 
-    replay = datetime(2018, 11, 8, 19, 50, tzinfo=timezone.utc)
-    payload = risk_payload(when=None if "--live" in sys.argv else replay)
+    start = datetime(2018, 11, 8, 19, 50, tzinfo=timezone.utc)
+
+    if "--replay" in sys.argv:
+        out = Path(__file__).resolve().parents[2] / "demo_data" / "risk_replay.json"
+        frames = replay(start)
+        out.write_text(json.dumps(frames, separators=(",", ":")), encoding="utf-8")
+        print(f"wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
+        for frame in frames:
+            print(f"  T+{frame['replay']['offset_h']}h  hotspots as of "
+                  f"{frame['data_as_of']['firms']}  "
+                  f"h6 {frame['summary']['area_km2']['h6']} km2")
+        sys.exit()
+
+    payload = risk_payload(when=None if "--live" in sys.argv else start)
     print(json.dumps(payload["summary"], indent=2))
     print("data_as_of:", payload["data_as_of"])
     print("seed detections:", len(payload["fire_points"]["features"]))
