@@ -325,7 +325,7 @@ if __name__ == "__main__":
     if "--replay" in sys.argv:
         out = Path(__file__).resolve().parents[2] / "demo_data" / "risk_replay.json"
         frames = replay(start)
-        out.write_text(json.dumps(frames, separators=(",", ":")), encoding="utf-8")
+        out.write_text(json.dumps(frames, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
         for frame in frames:
             print(f"  T+{frame['replay']['offset_h']}h  hotspots as of "
