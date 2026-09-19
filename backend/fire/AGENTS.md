@@ -1,5 +1,6 @@
 # Geospatial modeling agent rules
 
+- Read FINDINGS.md first: current state, and which model experiments are already settled.
 - Only edit files in backend/fire/, backend/weather/, and demo_data/risk_* / fuel_overlay.png.
 - Never edit contracts/ without the team agreeing first.
 - Output must match contracts/ exactly: EPSG:4326 GeoJSON, bands cumulative (h6 ⊇ h3 ⊇ h1 ⊇ current), timestamps included.
@@ -7,3 +8,4 @@
 - Wind direction from NWS is where wind comes FROM. Spread direction = (from + 180) % 360.
 - Never commit .env, .tif files, or anything over 10 MB.
 - Before pushing: run tests and validate output against the contract schema.
+- Working on the MAGI ensemble (magi.py)? Read MAGI.md first: it records measured results and the knobs already tried and rejected.

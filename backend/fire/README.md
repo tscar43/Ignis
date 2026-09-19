@@ -16,6 +16,7 @@ Tests green. Runs live or in replay against real data, not fixtures.
 python -m backend.fire.spread              # replay the Camp Fire, print the summary
 python -m backend.fire.spread --live       # current NRT hotspots + NWS wind
 python -m backend.fire.spread --replay     # write demo_data/risk_replay.json
+python -m backend.fire.magi                # MAGI ensemble: three models deliberate
 python -m backend.fire.validate            # IoU ablation across validation fires
 python -m backend.fire.contract            # check shipped payloads against the contract
 python -m backend.fire.landfire --overlay  # write demo_data/fuel_overlay.png
@@ -41,7 +42,7 @@ risk_payload(when=dt)   # replay: SP archive + reanalysis wind for that hour
 | `spread.py` | arrival-time Dijkstra, polygonize, `risk_payload()`, `replay()` |
 | `contract.py` | machine-checkable contract: `validate()` / `check()` |
 | `validate.py` | IoU ablation against real fires — results in `FINDINGS.md` |
-| `magi.py` | three-model ensemble — see `MAGI.md`, in flight, leave alone |
+| `magi.py` | Three-model ensemble, consensus by order statistic. `magi.risk_payload()` is a drop-in for `spread.risk_payload()`. See `MAGI.md`. |
 | `make_demo_data.py` | the hand-drawn day-one fake, superseded, kept as a fixture |
 | `../weather/nws.py` | wind: NWS live, Open-Meteo archive for replay |
 
@@ -55,7 +56,9 @@ teammates. Two rules matter most, and no JSON schema expresses either:
 
 `risk_payload()` returns through `contract.check()`, so an invalid payload
 raises instead of reaching the UI. That guard sits on `risk_payload()` and
-deliberately **not** in `assemble()`, which `magi.py` also calls.
+deliberately **not** in `assemble()`, which `magi.py` also calls -- so
+`magi.risk_payload()` carries its own `check()`, on the payload and on each
+confidence level.
 
 `contracts/` at the repo root is still empty and is shared. `contract.py` is
 the proposed content; moving it there needs team sign-off.
