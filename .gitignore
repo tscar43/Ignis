@@ -29,3 +29,4 @@ backend/fire/cache/
 # OS / editor
 .DS_Store
 Thumbs.db
+.playwright-mcp/

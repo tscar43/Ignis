@@ -1,0 +1,8 @@
+{
+  "destination": { "name": "Demo reception center", "accepts_pets": true, "accessible": true },
+  "routes": [
+    { "type": "recommended", "geometry": { "type": "LineString", "coordinates": [[-121.64,39.77],[-121.67,39.79],[-121.71,39.79],[-121.75,39.76],[-121.79,39.73]] }, "travel_time_min": 24, "distance_km": 18.5, "exposure": 0.17, "exposure_breakdown_km": { "h1": 0, "h3": 0.4, "h6": 1.2 }, "named_roads": ["Fictional ridge route"] },
+    { "type": "fastest", "geometry": { "type": "LineString", "coordinates": [[-121.64,39.77],[-121.66,39.75],[-121.69,39.73],[-121.74,39.72],[-121.79,39.73]] }, "travel_time_min": 18, "distance_km": 14.8, "exposure": 0.73, "exposure_breakdown_km": { "h1": 1.2, "h3": 2.4, "h6": 3.1 }, "named_roads": ["Fictional valley route"] }
+  ],
+  "warnings": ["Illustrative routes and destination only. Lines do not follow verified roads; do not use for navigation."]
+}
