@@ -44,3 +44,33 @@ summary                   small object; this is what the LLM reads
 
 Values, polygon count, and vertex count — not keys, not units, not CRS. If you
 need a key that isn't here, ask before assuming it; `contracts/` is shared.
+
+---
+
+## The other files here
+
+`risk_replay.json` — four real frames (T+0/1/3/6 h) from the 2018 Camp Fire,
+for a scrubber. Same contract as `risk_demo.json` plus a `replay` block with
+`offset_h` and `at`. Generated from real FIRMS, LANDFIRE and reanalysis data,
+not hand-drawn:
+
+    ./.venv/Scripts/python.exe -m backend.fire.spread --replay
+
+Each frame re-seeds from whatever satellite pass was newest at that moment, so
+`data_as_of.firms` goes stale across the frames on purpose — by T+6 h the
+newest observation is 4.3 h old. Show that timestamp in the UI.
+
+`fuel_overlay.png` + `fuel_overlay.json` — LANDFIRE fuel families as a map
+overlay. Rendered in EPSG:4326 so it drops straight onto a web map; the JSON
+carries `bounds` in Leaflet's `[[south, west], [north, east]]` order, plus a
+colour legend. Display only, and deliberately coarser than it could be:
+
+    ./.venv/Scripts/python.exe -m backend.fire.landfire --overlay
+
+## Live, not replay
+
+`risk_demo.json` is fake and `risk_replay.json` is a 2018 fire. For a live
+feed call the engine directly, no file involved:
+
+    from backend.fire.spread import risk_payload
+    risk_payload()            # NRT hotspots + current NWS wind

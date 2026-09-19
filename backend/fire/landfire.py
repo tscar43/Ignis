@@ -54,7 +54,8 @@ FUEL_GROUPS = {  # for the summary the LLM reads
 }
 
 
-def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True):
+def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True,
+          out_epsg: int = 5070, size: str | None = None):
     """(array, rasterio profile) for `layer` over `bbox` (W,S,E,N in EPSG:4326).
 
     30 m native is resampled to `cell_m`; 90-150 m is plenty for a demo and
@@ -62,13 +63,14 @@ def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True)
     are categories, and interpolating them invents fuel models that don't exist.
     """
     west, south, east, north = _to_albers.transform_bounds(*bbox)
-    size = f"{round((east - west) / cell_m)},{round((north - south) / cell_m)}"
+    size = size or f"{round((east - west) / cell_m)},{round((north - south) / cell_m)}"
     params = {
-        "bbox": f"{west},{south},{east},{north}", "bboxSR": 5070, "imageSR": 5070,
-        "size": size, "format": "tiff", "pixelType": "S16",
+        "bbox": f"{west},{south},{east},{north}", "bboxSR": 5070,
+        "imageSR": out_epsg, "size": size, "format": "tiff", "pixelType": "S16",
         "interpolation": "RSP_NearestNeighbor", "noData": -9999, "f": "image",
     }
-    tag = hashlib.sha1(f"{layer}|{params['bbox']}|{size}".encode()).hexdigest()[:12]
+    tag = hashlib.sha1(
+        f"{layer}|{params['bbox']}|{size}|{out_epsg}".encode()).hexdigest()[:12]
     cached = CACHE_DIR / f"{layer}_{cell_m}m_{tag}.tif"
 
     if not (use_cache and cached.exists()):
@@ -98,7 +100,74 @@ def dominant_fuels(codes: np.ndarray, top: int = 2) -> list[str]:
     return [FUEL_GROUPS[v] for v in values[np.argsort(-counts)][:top]]
 
 
+# Overlay palette, RGBA. Keyed by the low end of each FBFM40 family. Alpha is
+# low so the basemap stays readable underneath; non-burnable is the one the
+# frontend actually needs to show, so it is the most opaque.
+_PALETTE = [
+    (91, (150, 150, 150, 170)),   # non-burnable: urban, water, ag, barren
+    (101, (247, 224, 138, 120)),  # grass
+    (121, (212, 191, 79, 120)),   # grass-shrub
+    (141, (160, 82, 45, 130)),    # shrub
+    (161, (27, 94, 32, 130)),     # timber understory
+    (181, (124, 179, 66, 120)),   # timber litter
+    (201, (109, 76, 65, 130)),    # slash
+]
+
+
+def overlay_png(path, bbox=DEMO_BBOX, width: int = 600) -> dict:
+    """Write a fuel-layer PNG for the map, and return its EPSG:4326 bounds.
+
+    Rendered in EPSG:4326, not the 5070 model grid: a web map stretches an
+    image overlay across a lat/lon rectangle, so an Albers image would arrive
+    visibly skewed. Returns bounds in the [[south, west], [north, east]] order
+    Leaflet's imageOverlay expects.
+
+    600 px is ~62 m per pixel, still finer than the 120 m model grid. Going to
+    900 px triples the file (111 KB -> 307 KB) for detail the model does not
+    have: the cost is fuel speckle, not colour depth, so palette mode does not
+    help and would cost the per-class alpha.
+    """
+    from PIL import Image
+
+    west, south, east, north = bbox
+    height = round(width * (north - south) / (east - west))
+    codes, _ = fetch("fuel", bbox=bbox, out_epsg=4326, size=f"{width},{height}")
+
+    rgba = np.zeros((*codes.shape, 4), dtype="uint8")  # nodata stays transparent
+    for low, colour in _PALETTE:
+        high = next((n for n, _ in _PALETTE if n > low), 256)
+        rgba[(codes >= low) & (codes < high)] = colour
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(rgba, "RGBA").save(path, optimize=True)
+    return {
+        "image": path.name,
+        "bounds": [[south, west], [north, east]],
+        "crs": "EPSG:4326",
+        "size": [width, height],
+        "legend": {name: f"#{r:02x}{g:02x}{b:02x}" for (low, (r, g, b, _)), name
+                   in zip(_PALETTE, ["non-burnable", "grass", "grass-shrub", "shrub",
+                                     "timber understory", "timber litter", "slash"])},
+        "note": "LANDFIRE LF2016 FBFM40, grouped by fuel family. Display only -- "
+                "the model runs on the 30 m source in EPSG:5070.",
+    }
+
+
 if __name__ == "__main__":
+    import json
+    import sys
+
+    if "--overlay" in sys.argv:
+        out = Path(__file__).resolve().parents[2] / "demo_data" / "fuel_overlay.png"
+        meta = overlay_png(out)
+        meta_path = out.with_suffix(".json")
+        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        print(f"wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
+        print(f"wrote {meta_path}")
+        print(json.dumps({k: meta[k] for k in ("bounds", "size")}, indent=2))
+        sys.exit()
+
     codes, profile = fetch("fuel")
     factors = fuel_factor(codes)
     print(f"{profile['crs']} {codes.shape} at {profile['transform'].a:.1f} m")

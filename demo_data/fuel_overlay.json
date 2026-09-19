@@ -1,0 +1,28 @@
+{
+  "image": "fuel_overlay.png",
+  "bounds": [
+    [
+      39.6,
+      -121.8
+    ],
+    [
+      39.95,
+      -121.4
+    ]
+  ],
+  "crs": "EPSG:4326",
+  "size": [
+    600,
+    525
+  ],
+  "legend": {
+    "non-burnable": "#969696",
+    "grass": "#f7e08a",
+    "grass-shrub": "#d4bf4f",
+    "shrub": "#a0522d",
+    "timber understory": "#1b5e20",
+    "timber litter": "#7cb342",
+    "slash": "#6d4c41"
+  },
+  "note": "LANDFIRE LF2016 FBFM40, grouped by fuel family. Display only -- the model runs on the 30 m source in EPSG:5070."
+}
