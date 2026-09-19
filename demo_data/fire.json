@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-09-19T12:00:00Z",
+  "data_as_of": {
+    "firms": "2026-09-19T11:45:00Z",
+    "weather": "2026-09-19T12:00:00Z"
+  },
+  "fire_points": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "properties": { "id": "f1", "intensity": 0.9 },
+        "geometry": { "type": "Point", "coordinates": [-121.7, 39.775] }
+      },
+      {
+        "type": "Feature",
+        "properties": { "id": "f2", "intensity": 0.7 },
+        "geometry": { "type": "Point", "coordinates": [-121.685, 39.76] }
+      }
+    ]
+  },
+  "risk_polygons": {
+    "current": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": { "band": "current" },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+              [-121.72, 39.76], [-121.68, 39.755],
+              [-121.665, 39.775], [-121.71, 39.79],
+              [-121.72, 39.76]
+            ]]
+          }
+        }
+      ]
+    },
+    "h1": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": { "band": "h1" },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+              [-121.74, 39.75], [-121.655, 39.75],
+              [-121.64, 39.785], [-121.735, 39.8],
+              [-121.74, 39.75]
+            ]]
+          }
+        }
+      ]
+    },
+    "h3": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": { "band": "h3" },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+              [-121.76, 39.74], [-121.63, 39.74],
+              [-121.615, 39.795], [-121.76, 39.81],
+              [-121.76, 39.74]
+            ]]
+          }
+        }
+      ]
+    },
+    "h6": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": { "band": "h6" },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+              [-121.78, 39.73], [-121.6, 39.735],
+              [-121.585, 39.8], [-121.78, 39.82],
+              [-121.78, 39.73]
+            ]]
+          }
+        }
+      ]
+    }
+  },
+  "summary": {
+    "note": "Fake demo scenario: fire west of Auburn, CA, spreading east toward the demo area. Bands are cumulative (h6 >= h3 >= h1 >= current)."
+  }
+}
