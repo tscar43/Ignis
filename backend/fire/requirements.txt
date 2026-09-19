@@ -1,0 +1,12 @@
+# Geospatial modeling (fire-engine). Direct deps only -- merge into the shared
+# root requirements file once the team agrees on one.
+numpy==2.5.3
+rasterio==1.5.1
+geopandas==1.1.4
+shapely==2.1.2
+pyproj==3.8.0
+httpx==0.28.1
+requests==2.34.2
+matplotlib==3.11.2
+jupyter==1.1.1
+pytest==9.1.1
