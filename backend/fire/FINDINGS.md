@@ -2,7 +2,9 @@
 
 What a new session needs before touching the model: which questions are
 already answered, so nobody re-runs a dead end. `AGENTS.md` is the rules,
-`README.md` is the current state, this is the evidence.
+this is the evidence. All nine milestones from the role brief are done and
+pushed on `fire-engine`; the engine runs live or in replay against real FIRMS,
+LANDFIRE and ERA5 data.
 
 Detail lives in commit messages and in `validate.py`'s docstring. This file
 points at it rather than restating it, so the two can't drift.
