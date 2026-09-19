@@ -55,6 +55,9 @@ class Hotspot:
     acq_time: datetime  # UTC
     sensor: str
     source: str
+    # Ground footprint of the detecting instrument. VIIRS is 375 m; goes.py
+    # builds Hotspots with a far coarser one, and the seed mask honours it.
+    pixel_m: float = 375.0
 
     def as_feature(self) -> dict:
         return {

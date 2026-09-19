@@ -64,6 +64,13 @@ it into `backend/fire/` — it more likely belongs in the API layer.
   person's work under another's commit message twice (`a7acf52`, `40bcb40`).
 - `git fetch origin` and check divergence before every push.
 - Never commit `.env`, `.tif`, or anything over 10 MB.
+- **Do not read `demo_data/risk_replay.json` into context.** It is 1.4 MB
+  across 53,000 lines and will exhaust your context window in a single call.
+  You need its shape, which is in `demo_data/README.md`, not its contents. For
+  real JSON read `demo_data/risk_demo.json` (36 KB, same contract), or slice
+  one frame:
+  `./.venv/Scripts/python.exe -c "import json; print(json.load(open('demo_data/risk_replay.json'))[0]['summary'])"`
+  The same goes for `backend/fire/cache/` and any `demo_data/*.png`.
 - Payload geometry is **`[lon, lat]`**, EPSG:4326, and bands are **cumulative**
   (`h6 ⊇ h3 ⊇ h1 ⊇ current`). No JSON schema expresses either; `contract.py`
   does. If you need a key that is not in the contract, ask — do not add it to

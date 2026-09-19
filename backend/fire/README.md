@@ -21,9 +21,13 @@ $P -m backend.fire.spread --live            # current NRT hotspots + NWS wind
 $P -m backend.fire.spread --replay          # write demo_data/risk_replay.json
 $P -m backend.fire.magi                     # MAGI ensemble: three models deliberate
 $P -m backend.fire.validate                 # IoU ablation across validation fires
+$P -m backend.fire.palisades                # Palisades 2025, vs the standard model
+$P -m backend.fire.elliptical               # the ellipse's LB ratio by wind speed
+$P -m backend.fire.rothermel                # spread rate per fuel model by wind
 $P -m backend.fire.contract                 # check shipped payloads against the contract
 $P -m backend.fire.landfire --overlay       # write demo_data/fuel_overlay.png
-$P -m pytest backend/fire/tests -q          # 53 tests, all offline, ~1 s
+$P -m backend.fire.goes W S E N             # newest GOES ABI frame for a bbox
+$P -m pytest backend/fire/tests -q          # 105 tests, all offline, ~1 s
 ```
 
 Entry points run with `-m`: `backend/` is a package and the modules import
@@ -43,14 +47,18 @@ risk_payload(when=dt)   # replay: SP archive + reanalysis wind for that hour
 | module | does |
 |---|---|
 | `firms.py` | FIRMS hotspots, live (NRT) and archive (SP), disk-cached |
+| `goes.py` | GOES ABI fire pixels, newest frame, ~5 min old. Live freshness seed |
 | `landfire.py` | fuel/slope/aspect rasters, the F_fuel lookup, the map overlay |
 | `terrain.py` | F_slope, directional, from slope and aspect |
 | `spread.py` | arrival-time Dijkstra, polygonize, `risk_payload()`, `replay()` |
 | `contract.py` | machine-checkable contract: `validate()` / `check()` |
 | `validate.py` | IoU ablation against real fires — results in `FINDINGS.md` |
+| `elliptical.py` | the Alexander/Finney ellipse FARSITE-class tools use, as a baseline |
+| `rothermel.py` | Rothermel/Albini surface spread and the 40 fuel models. No fitted R0 |
+| `palisades.py` | Palisades 2025 three-way comparison and its figure |
 | `magi.py` | Three-model ensemble, consensus by order statistic. `magi.risk_payload()` is a drop-in for `spread.risk_payload()`. See `MAGI.md`. |
 | `make_demo_data.py` | the hand-drawn day-one fake, superseded, kept as a fixture |
-| `../weather/nws.py` | wind: NWS live, Open-Meteo archive for replay |
+| `../weather/nws.py` | wind: HRRR live (NWS gridpoint fallback), Open-Meteo archive for replay |
 
 ## The contract
 
@@ -85,12 +93,26 @@ only thing that says which. Aspect is the direction the slope *faces*, which
 is downslope — uphill is `aspect + 180`, and backwards runs fire into the
 valley while still looking plausible on a map. There is a test for that one.
 
+**GOES.** The CONUS sector (`FDCC`) scans every 5 minutes; the file reaches
+S3 about 3 minutes after scan start, anonymously, no key. The filename's `_s`
+field is year + **day-of-year** + HHMMSS -- parsing it as `%Y%m%d` lands in the
+wrong month and still looks like a timestamp. Mask values below 10 are not
+fire; the 3x codes are the 1x categories confirmed across frames. An ABI cell
+is kilometres wide, so a GOES detection seeded at VIIRS's 375 m marks one
+120 m grid cell and the morphological closing then deletes it -- the detection
+is fetched, geolocated correctly, and silently does nothing. That is what
+`Hotspot.pixel_m` exists for, and `test_goes.py` pins it.
+
 **Wind.** Both sources report the direction wind comes FROM. Everything
 leaving `nws.py` is already flipped to TOWARD, so do not flip it twice --
 `tests/test_nws.py` pins the flip at the source and `test_spread.py` pins it
 downstream. ERA5
 reanalysis is ~25 km and smooths terrain-driven wind away, which is what
-`archived(peak_window_h=...)` exists for.
+`archived(peak_window_h=...)` exists for. An NWS gridpoint series starts at the
+last issuance boundary, not at the current hour, so `values[0]` is not "now" --
+it read 7 h stale on a live run and shipped as `data_as_of.weather`. Speed and
+direction break at different times, so each series is selected separately.
+`live()` now prefers HRRR at 3 km and keeps the gridpoint as a fallback.
 
 **Geometry.** Snap coordinates *before* the final union, never after —
 snapping a union's intersection vertices moves them off the inner band's edge

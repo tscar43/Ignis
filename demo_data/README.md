@@ -67,10 +67,18 @@ colour legend. Display only, and deliberately coarser than it could be:
 
     ./.venv/Scripts/python.exe -m backend.fire.landfire --overlay
 
+`palisades_comparison.png` + `palisades_nifc_perimeter.geojson` — how the
+engine scored against the January 2025 Palisades Fire, beside the
+FARSITE-class elliptical model and the fire's observed footprint. The GeoJSON
+is NIFC's final perimeter, 23,448 acres, used for context in the figure and
+not by the engine. Numbers and caveats are in `backend/fire/FINDINGS.md`:
+
+    ./.venv/Scripts/python.exe -m backend.fire.palisades
+
 ## Live, not replay
 
 `risk_demo.json` is fake and `risk_replay.json` is a 2018 fire. For a live
 feed call the engine directly, no file involved:
 
     from backend.fire.spread import risk_payload
-    risk_payload()            # NRT hotspots + current NWS wind
+    risk_payload()            # newest VIIRS pass + GOES ABI frame, HRRR wind

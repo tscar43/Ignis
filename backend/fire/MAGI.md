@@ -96,6 +96,17 @@ fires, which is the mistake `validate.py` exists to catch.
 
 ## Open, in rough priority order
 
+0. **Replace BALTHASAR-2 with `rothermel.py`.** The honest problem with this
+   ensemble is that all three magi are one kernel with different knobs, so they
+   agree for structural reasons and the ADVISORY-to-CONFIRMED gap is narrower
+   than the truth. Balthasar is the one to cut: its gains only increase rate,
+   so its arrival times sit pointwise below Melchior's and it can never set
+   CONFIRMED (see below). `rothermel.py` is independently derived, carries no
+   fitted R0, and is validated against the BehavePlus core to a constant 1.029.
+   Not done yet -- it needs a per-cell rate path, since Rothermel gives a rate
+   per fuel code where `spread.py` takes one global R0. Losing Balthasar also
+   loses the protective upper bound; Rothermel may or may not subsume it, and
+   that is a measurement, not an assumption.
 1. Per-magus R0 calibration via `validate.calibrate`, so the IoU table compares
    shape rather than partly size. Against: it is fitting to two fires.
 2. A `confidence=False` fast path. Three levels × four bands = 12 polygonizations
