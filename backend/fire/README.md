@@ -1,14 +1,16 @@
 # Fire spread & geospatial engine
 
 Turns satellite fire detections, wind, fuel and terrain into 1h/3h/6h risk
-polygons the routing engine avoids. Lives on the `fire-engine` branch.
+polygons the routing engine avoids. Developed on `fire-engine`, merged to
+`main`.
 
 Three docs, no overlap: **this** is orientation, `FINDINGS.md` is what the
 model experiments settled, `AGENTS.md` is the rules. `MAGI.md` covers the
 ensemble. Read `AGENTS.md` and `FINDINGS.md` before changing the model.
 
-**Status:** all nine milestones from the role brief are done and pushed.
+**Status:** all nine milestones from the role brief are done and merged.
 Tests green. Runs live or in replay against real data, not fixtures.
+Repo-wide rules, and who owns what, are in the root `AGENTS.md`.
 
 ## Run it
 

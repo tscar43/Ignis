@@ -2,8 +2,8 @@
 
 What a new session needs before touching the model: which questions are
 already answered, so nobody re-runs a dead end. `AGENTS.md` is the rules,
-this is the evidence. All nine milestones from the role brief are done and
-pushed on `fire-engine`; the engine runs live or in replay against real FIRMS,
+this is the evidence. All nine milestones from the role brief are done, and
+merged to `main`; the engine runs live or in replay against real FIRMS,
 LANDFIRE and ERA5 data.
 
 Detail lives in commit messages and in `validate.py`'s docstring. This file
@@ -86,6 +86,7 @@ file's history looks like someone else touched it mid-change, that is why.
 | contract | `36281b2` | `contract.py`. Lon/lat order and cumulative nesting are geometric, so no JSON schema expresses them. `spread.risk_payload()` now returns through `check()`. |
 | docs | `509d4ba`..`11b996a` | `README.md` is orientation and commands, this file is the evidence, `AGENTS.md` is the rules. |
 | MAGI ensemble | `6f1a812` | `magi.py` and `tests/test_magi.py`, improved and contract-guarded. Full summary in `MAGI.md`. |
+| test gaps, and the merge | `cca7d28`.. | `nws.py` had no tests; the FROM/TOWARD flip and the two parsing traps are pinned now, and a negative peak-window index near midnight UTC was found on the way. `test_contract.py` now checks `risk_replay.json` too, not just the hand-drawn fake. Then the branch was merged to `main`, which until this point held nothing but a one-line README, and a repo-root `AGENTS.md` was added so the other two tracks' agents stay out of `backend/fire/`. |
 
 ### What the MAGI track settled
 
