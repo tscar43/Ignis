@@ -11,22 +11,52 @@ because the bias cancels.
 Each configuration is calibrated separately before scoring. Sharing one R0
 would make the ablation meaningless -- adding F_fuel only slows the model
 down, so IoU would measure spread rate rather than whether the fuel term puts
-fire in better places. Fit on 2018-11-08, score on 11-09.
+fire in better places. Fit on one day, score on the next; `FIRES` holds both.
 
-RESULT, recorded honestly because it is not what we expected: on this fire the
-fuel and slope terms do NOT improve IoU. Wind alone scores 0.385 growth-IoU at
-+11.4 h against 0.314 for wind+fuel+slope, and they tie at +1.7 h. Two things
-we checked and ruled out:
+RESULT, recorded honestly because it is not what we expected: the fuel and
+slope terms do NOT improve IoU, on either fire. Growth-only IoU:
+
+                        Camp 2018-11-09       Dixie 2021-07-16
+                      +1.7 h     +11.4 h     +1.7 h     +10.5 h
+  wind only            0.279       0.385      0.232       0.376
+  wind+fuel            0.284       0.314      0.222       0.353
+  wind+fuel+slope      0.274       0.314      0.259       0.334
+
+Camp was run first, and the explanation it suggested -- that a fire under
+35 km/h wind is wind-driven rather than fuel-limited, so a fuel term tuned for
+moderate conditions adds noise -- predicts that a slow fire reverses the
+ordering. Dixie's first week is that test: 10 km up the same canyon, sharing
+terrain, fuel vintage and reanalysis cell, at 13 km/h instead of 35. It does
+not reverse. Wind alone still wins at ~10 h, by the same margin. The regime
+explanation is dead: whatever costs the fuel term IoU is not specific to a
+wind-driven fire. (The second scoring pair on each fire agrees with the first;
+`python -m backend.fire.validate` prints all of them.)
+
+What Dixie does show is where the terms earn their place. At +1.7 h in that
+canyon, wind+fuel+slope is the best configuration -- 0.259 against 0.232 --
+and slope is what carries it, since fuel alone scores worse than no fuel at
+all. Short range, steep ground, the terrain term helps.
+
+Three things checked and ruled out:
 
   - Unfair calibration. Fixed; each variant gets its own R0. Wind still wins.
   - Urban treated as a hard barrier, since the Camp Fire burned through
     Paradise and 7.2% of detections land on non-burnable cells. Relaxing
     urban F_fuel from 0.0 to 0.5 moved growth-IoU by 0.001. Not the cause.
+  - Fuel vintage on Dixie. LF2016 predates the 2018 and 2020 fires whose scars
+    fall in that bbox, so it should overstate fuel there. Against LF2022, mean
+    F_fuel inside the observed footprint is unchanged (0.527 vs 0.531). Not a
+    level bias -- though 64% of individual cells disagree, which is its own
+    finding: the per-cell detail a fuel term is supposed to buy is not stable
+    across vintages. Some of that disagreement is Dixie itself, since LF2022
+    is post-fire.
 
-The most likely explanation is that a fire under 35 km/h wind is wind-driven
-rather than fuel-limited, so a fuel term tuned for moderate conditions adds
-noise. That is a claim about this fire, not a general one -- testing it needs
-a slower, fuel-limited fire, which we have not run.
+The leading remaining explanation is the calibration. F_fuel <= 1 everywhere
+and averages ~0.5, so matching burned area forces R0 up two to three times
+(Camp 9.8 -> 27, Dixie 22 -> 48). The fuel runs therefore drive their grass
+corridors at near-full R0 while timber lags, and that spikier footprint may
+score worse against a truth mask built from 375 m detection pixels than a
+smooth wind ellipse does. Untested -- it needs a shape metric, not IoU.
 
 Keep the fuel and slope terms anyway: they are what make barriers and terrain
 visible in the output, and the contract's consumers need that. But do not
@@ -145,27 +175,44 @@ def score(seed_at: datetime, validate_at: datetime, bbox=firms.DEMO_BBOX,
     }
 
 
-if __name__ == "__main__":
-    hotspots = firms.fetch_many(firms.ARCHIVE_SOURCES, start_date="2018-11-08", days=2)
-    passes = sorted({h.acq_time for h in hotspots})
+# (bbox, day to calibrate on, day to score on). The two days never overlap:
+# fitting and scoring on one window would make every IoU a restatement of the
+# calibration.
+FIRES = {
+    "camp": (firms.DEMO_BBOX, "2018-11-08", "2018-11-09"),
+    # Dixie's first week, 10 km up the same canyon from Camp's origin -- near
+    # enough to share terrain, fuel vintage and reanalysis cell, so the fire
+    # regime is close to the only thing that differs. July at 13 km/h instead
+    # of November at 35: the slow case the docstring's explanation needs.
+    "dixie": ((-121.55, 39.78, -121.05, 40.10), "2021-07-15", "2021-07-16"),
+}
 
-    # Fit on 11-08, score on 11-09. Same window for both would make every
-    # number below a restatement of the calibration.
-    fit_seed, fit_at = passes[0], passes[2]
-    fit = _setup(fit_seed, fit_at, firms.DEMO_BBOX, 8)
+
+def run(name: str, peak_window_h: int = 8) -> None:
+    """Calibrate on one day, then score three seed/validate pairs on the next."""
+    bbox, fit_day, score_day = FIRES[name]
+    hotspots = firms.fetch_many(firms.ARCHIVE_SOURCES, bbox=bbox,
+                                start_date=fit_day, days=2)
+    passes = sorted({h.acq_time for h in hotspots})
+    fit_passes = [p for p in passes if p.date().isoformat() == fit_day]
+    score_passes = [p for p in passes if p.date().isoformat() == score_day]
+
+    fit = _setup(fit_passes[0], fit_passes[2], bbox, peak_window_h)
     target = fit["truth"].sum() * fit["cell_km2"]
-    print(f"calibrating on {firms.iso(fit_seed)} -> {firms.iso(fit_at)} "
-          f"(+{fit['gap_min'] / 60:.1f} h), target {target:.1f} km2")
+    print(f"{name.upper()}: calibrating on {firms.iso(fit_passes[0])} -> "
+          f"{firms.iso(fit_passes[2])} (+{fit['gap_min'] / 60:.1f} h), "
+          f"target {target:.1f} km2")
 
     r0 = {}
     for label, (use_fuel, use_slope) in CONFIGURATIONS.items():
         r0[label] = calibrate(fit, use_fuel, use_slope, target)
         print(f"  {label:<18} R0 = {r0[label]:>6} m/min")
 
-    nov9 = [p for p in passes if p.date() == datetime(2018, 11, 9).date()]
-    for seed_at, validate_at in [(nov9[0], nov9[2]), (nov9[0], nov9[3]),
-                                 (nov9[1], nov9[4])]:
-        report = score(seed_at, validate_at, r0_by_config=r0)
+    for seed_at, validate_at in [(score_passes[0], score_passes[2]),
+                                 (score_passes[0], score_passes[3]),
+                                 (score_passes[1], score_passes[4])]:
+        report = score(seed_at, validate_at, bbox=bbox,
+                       peak_window_h=peak_window_h, r0_by_config=r0)
         print()
         print(f"seed {report['seed_at']} -> validate {report['validate_at']} "
               f"(+{report['gap_h']} h, scored on {report['band']})")
@@ -175,3 +222,11 @@ if __name__ == "__main__":
         for label, row in report["results"].items():
             print(f"  {label:<18}{row['r0']:>7}{row['iou']:>8}"
                   f"{row['iou_growth']:>13}{row['predicted_km2']:>11}")
+
+
+if __name__ == "__main__":
+    import sys
+
+    for name in [a for a in sys.argv[1:] if a in FIRES] or list(FIRES):
+        run(name)
+        print()
