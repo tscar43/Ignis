@@ -22,7 +22,7 @@ from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
 
 from ..weather import nws
-from . import firms, landfire
+from . import firms, landfire, terrain
 from .firms import DEMO_BBOX
 
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
@@ -73,13 +73,16 @@ def arrival_times(
     wind_toward_deg: float,
     cell_m: float,
     propensity: np.ndarray | None = None,
+    slope: np.ndarray | None = None,
     horizon_min: float = max(BANDS.values()),
     r0: float = R0_M_PER_MIN,
 ) -> np.ndarray:
     """Minutes until fire reaches each cell. Unreached cells come back inf.
 
-    `propensity` is the per-cell terrain term (F_fuel x F_slope); None means
-    wind-only. A cell with propensity 0 is a hard barrier and is never entered.
+    `propensity` is the per-cell F_fuel; None means no fuel term. A cell with
+    propensity 0 is a hard barrier and is never entered. `slope` is F_slope as
+    (len(NEIGHBOURS), rows, cols) -- directional, so it cannot fold into
+    `propensity`. Both None gives the wind-only baseline.
     """
     if propensity is None:
         propensity = np.ones(ignition.shape, dtype="float32")
@@ -96,11 +99,14 @@ def arrival_times(
         time, row, col = heappop(queue)
         if time > arrival[row, col]:
             continue  # stale entry, already relaxed by a cheaper path
-        for (drow, dcol), length, wind_factor in zip(NEIGHBOURS, lengths, wind):
+        for index, ((drow, dcol), length, wind_factor) in enumerate(
+                zip(NEIGHBOURS, lengths, wind)):
             r, c = row + drow, col + dcol
             if not (0 <= r < rows and 0 <= c < cols):
                 continue
             rate = r0 * wind_factor * propensity[r, c]
+            if slope is not None:
+                rate *= slope[index, r, c]
             if rate <= 0:
                 continue  # non-burnable: fire does not enter this cell
             candidate = time + length / rate
@@ -170,7 +176,8 @@ def _feature_collection(geom, to_wgs, name: str) -> dict:
 
 
 def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
-                 use_fuel: bool = True, peak_window_h: int = 8) -> dict:
+                 use_fuel: bool = True, use_slope: bool = True,
+                 peak_window_h: int = 8) -> dict:
     """The whole contract, in one call. This is what the endpoint returns.
 
     `when=None` is live: NRT hotspots and current NWS wind. A datetime is
@@ -196,9 +203,15 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
 
     codes, profile = landfire.fetch("fuel", bbox=bbox)
     propensity = landfire.fuel_factor(codes) if use_fuel else None
+    slope = None
+    if use_slope:
+        slope = terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
+                                      landfire.fetch("aspect", bbox=bbox)[0],
+                                      NEIGHBOURS)
     ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
     arrival = arrival_times(ignition, wind.speed_kmh, wind.toward_deg,
-                            cell_m=profile["transform"].a, propensity=propensity)
+                            cell_m=profile["transform"].a, propensity=propensity,
+                            slope=slope)
     bands = bands_to_geojson(arrival, profile["transform"])
 
     burned = codes[np.isfinite(arrival)]
