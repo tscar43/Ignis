@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-import firms  # noqa: E402
+from backend.fire import firms  # noqa: E402
 
 VIIRS_ROW = {
     "latitude": "39.69794", "longitude": "-121.63232", "acq_date": "2018-11-08",

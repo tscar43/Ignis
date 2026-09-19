@@ -11,6 +11,7 @@ in bands_to_geojson, at the very end.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from heapq import heappop, heappush
 
 import numpy as np
@@ -19,6 +20,10 @@ from pyproj import Transformer
 from shapely.geometry import mapping, shape
 from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
+
+from ..weather import nws
+from . import firms, landfire
+from .firms import DEMO_BBOX
 
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
 
@@ -164,23 +169,62 @@ def _feature_collection(geom, to_wgs, name: str) -> dict:
         for p in parts]}
 
 
-if __name__ == "__main__":
-    import firms
-    import landfire
+def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
+                 use_fuel: bool = True, peak_window_h: int = 8) -> dict:
+    """The whole contract, in one call. This is what the endpoint returns.
 
-    codes, profile = landfire.fetch("fuel")
-    hotspots = firms.fetch_many(firms.ARCHIVE_SOURCES, start_date="2018-11-08", days=1)
-    first_pass = min(h.acq_time for h in hotspots)
-    seed = [h for h in hotspots if h.acq_time == first_pass]
+    `when=None` is live: NRT hotspots and current NWS wind. A datetime is
+    replay: the SP archive and reanalysis wind for that hour.
+    """
+    live_mode = when is None
+    hotspots = firms.fetch_many(
+        firms.LIVE_SOURCES if live_mode else firms.ARCHIVE_SOURCES,
+        bbox=bbox, start_date=None if live_mode else when.date(), days=1)
+    if not hotspots:
+        raise RuntimeError(f"no hotspots in {bbox} for {when or 'the latest pass'}")
 
+    # Seed from one satellite pass, not all of them: older detections are
+    # already-burned area, and seeding them projects the fire twice.
+    seed_time = max(h.acq_time for h in hotspots) if live_mode else min(
+        (h.acq_time for h in hotspots if h.acq_time >= when), default=None)
+    seed = [h for h in hotspots if h.acq_time == seed_time]
+
+    lat = (bbox[1] + bbox[3]) / 2
+    lon = (bbox[0] + bbox[2]) / 2
+    wind = (nws.live(lat, lon) if live_mode
+            else nws.archived(lat, lon, seed_time, peak_window_h=peak_window_h))
+
+    codes, profile = landfire.fetch("fuel", bbox=bbox)
+    propensity = landfire.fuel_factor(codes) if use_fuel else None
     ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
-    arrival = arrival_times(ignition, wind_kmh=35, wind_toward_deg=240,
-                            cell_m=profile["transform"].a)
-    result = bands_to_geojson(arrival, profile["transform"])
+    arrival = arrival_times(ignition, wind.speed_kmh, wind.toward_deg,
+                            cell_m=profile["transform"].a, propensity=propensity)
+    bands = bands_to_geojson(arrival, profile["transform"])
 
-    print(f"seed: {len(seed)} detections at {firms.iso(first_pass)} "
-          f"-> {ignition.sum()} cells")
-    print(f"reached: {np.isfinite(arrival).sum()} cells")
-    print(f"area_km2: {result['area_km2']}")
-    for name, fc in result["risk_polygons"].items():
+    burned = codes[np.isfinite(arrival)]
+    return {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "data_as_of": {"firms": firms.iso(seed_time), "weather": wind.observed_at},
+        "fire_points": firms.to_feature_collection(seed),
+        "risk_polygons": bands["risk_polygons"],
+        "summary": {
+            "wind_speed_kmh": wind.speed_kmh,
+            "wind_toward_deg": round(wind.toward_deg),
+            "primary_spread_direction": wind.compass,
+            "dominant_fuels": landfire.dominant_fuels(burned),
+            "area_km2": bands["area_km2"],
+        },
+    }
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    replay = datetime(2018, 11, 8, 19, 50, tzinfo=timezone.utc)
+    payload = risk_payload(when=None if "--live" in sys.argv else replay)
+    print(json.dumps(payload["summary"], indent=2))
+    print("data_as_of:", payload["data_as_of"])
+    print("seed detections:", len(payload["fire_points"]["features"]))
+    for name, fc in payload["risk_polygons"].items():
         print(f"  {name}: {len(fc['features'])} polygons")

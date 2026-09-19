@@ -18,7 +18,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-from firms import DEMO_BBOX
+from .firms import DEMO_BBOX
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache"  # gitignored
 CRS = "EPSG:5070"

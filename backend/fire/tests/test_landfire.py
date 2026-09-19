@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-import landfire  # noqa: E402
+from backend.fire import landfire  # noqa: E402
 
 
 def test_non_burnable_and_nodata_are_hard_barriers():

@@ -12,9 +12,9 @@ from pathlib import Path
 import numpy as np
 from affine import Affine
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-import spread  # noqa: E402
+from backend.fire import spread  # noqa: E402
 
 CELL = 100.0
 
