@@ -17,7 +17,7 @@ def main() -> None:
     print(f"Downloading drive graph around {CENTER} (dist {DIST_M} m)...")
     g = ox.graph_from_point(CENTER, dist=DIST_M, network_type="drive")
     ox.add_edge_speeds(g)
-    ox.add_edge_travel_times(g, speed_mode="average")
+    ox.add_edge_travel_times(g)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     ox.save_graphml(g, OUT)
     print(f"Saved {OUT} — {len(g.nodes)} nodes, {len(g.edges)} edges")
