@@ -13,18 +13,22 @@ Tests green. Runs live or in replay against real data, not fixtures.
 ## Run it
 
 ```bash
-python -m backend.fire.spread              # replay the Camp Fire, print the summary
-python -m backend.fire.spread --live       # current NRT hotspots + NWS wind
-python -m backend.fire.spread --replay     # write demo_data/risk_replay.json
-python -m backend.fire.magi                # MAGI ensemble: three models deliberate
-python -m backend.fire.validate            # IoU ablation across validation fires
-python -m backend.fire.contract            # check shipped payloads against the contract
-python -m backend.fire.landfire --overlay  # write demo_data/fuel_overlay.png
-python -m pytest backend/fire/tests -q
+P=./.venv/Scripts/python.exe                # every doc here uses this interpreter
+$P -m backend.fire.spread                   # replay the Camp Fire, print the summary
+$P -m backend.fire.spread --live            # current NRT hotspots + NWS wind
+$P -m backend.fire.spread --replay          # write demo_data/risk_replay.json
+$P -m backend.fire.magi                     # MAGI ensemble: three models deliberate
+$P -m backend.fire.validate                 # IoU ablation across validation fires
+$P -m backend.fire.contract                 # check shipped payloads against the contract
+$P -m backend.fire.landfire --overlay       # write demo_data/fuel_overlay.png
+$P -m pytest backend/fire/tests -q          # 53 tests, all offline, ~1 s
 ```
 
 Entry points run with `-m`: `backend/` is a package and the modules import
-relatively. Needs `.venv` (Python 3.12) and `FIRMS_MAP_KEY` in `.env`.
+relatively. Call the venv interpreter by path rather than a bare `python` --
+the venv is not activated in a fresh shell, and `python` there is the system
+3.14 with none of the geospatial wheels. Needs `.venv` (Python 3.12) and
+`FIRMS_MAP_KEY` in `.env`.
 
 ```python
 from backend.fire.spread import risk_payload
@@ -80,7 +84,9 @@ is downslope — uphill is `aspect + 180`, and backwards runs fire into the
 valley while still looking plausible on a map. There is a test for that one.
 
 **Wind.** Both sources report the direction wind comes FROM. Everything
-leaving `nws.py` is already flipped to TOWARD, so do not flip it twice. ERA5
+leaving `nws.py` is already flipped to TOWARD, so do not flip it twice --
+`tests/test_nws.py` pins the flip at the source and `test_spread.py` pins it
+downstream. ERA5
 reanalysis is ~25 km and smooths terrain-driven wind away, which is what
 `archived(peak_window_h=...)` exists for.
 

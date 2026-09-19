@@ -13,7 +13,7 @@ track that ran in parallel.
 
 ## The ablation
 
-`python -m backend.fire.validate` scores wind-only against wind+fuel and
+`./.venv/Scripts/python.exe -m backend.fire.validate` scores wind-only against wind+fuel and
 wind+fuel+slope, on two fires, each variant calibrated separately. Growth-only
 IoU:
 
@@ -85,7 +85,7 @@ file's history looks like someone else touched it mid-change, that is why.
 | second fire | `067c9b0` | Dixie's first week tested the regime explanation and killed it. One positive result: slope earns its place at short range on steep ground. |
 | contract | `36281b2` | `contract.py`. Lon/lat order and cumulative nesting are geometric, so no JSON schema expresses them. `spread.risk_payload()` now returns through `check()`. |
 | docs | `509d4ba`..`11b996a` | `README.md` is orientation and commands, this file is the evidence, `AGENTS.md` is the rules. |
-| MAGI ensemble | **uncommitted** | `magi.py` and `tests/test_magi.py`, improved and contract-guarded. Full summary in `MAGI.md`. |
+| MAGI ensemble | `6f1a812` | `magi.py` and `tests/test_magi.py`, improved and contract-guarded. Full summary in `MAGI.md`. |
 
 ### What the MAGI track settled
 

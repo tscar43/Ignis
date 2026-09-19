@@ -18,16 +18,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from backend.fire import contract  # noqa: E402
 
-DEMO = Path(__file__).resolve().parents[3] / "demo_data" / "risk_demo.json"
+DEMO_DATA = Path(__file__).resolve().parents[3] / "demo_data"
+DEMO = DEMO_DATA / "risk_demo.json"
+REPLAY = DEMO_DATA / "risk_replay.json"
+
+
+def _payloads(path):
+    """risk_replay.json is a list of frames; risk_demo.json is one payload."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, list) else [data]
 
 
 @pytest.fixture
 def payload():
-    return json.loads(DEMO.read_text(encoding="utf-8"))
+    return _payloads(DEMO)[0]
 
 
-def test_the_shipped_demo_payload_is_valid(payload):
-    assert contract.validate(payload) == []
+@pytest.mark.parametrize("path", [DEMO, REPLAY], ids=lambda p: p.stem)
+def test_every_shipped_payload_is_valid(path):
+    """Not just the hand-drawn demo: risk_replay.json is what the map consumes,
+    and it is regenerated from real data, so it can drift out of contract."""
+    for frame in _payloads(path):
+        assert contract.validate(frame) == []
 
 
 def test_swapped_lat_lon_is_caught(payload):

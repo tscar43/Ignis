@@ -109,9 +109,9 @@ fires, which is the mistake `validate.py` exists to catch.
 
 ## Session notes
 
-- `magi.py` and `tests/test_magi.py` were committed by another session inside
-  `40bcb40` (milestone 9), which used `git add -A`. Improvements since then are
-  **uncommitted** in the working tree by request.
+- `magi.py` and `tests/test_magi.py` were first committed by another session
+  inside `40bcb40` (milestone 9), which used `git add -A`. The improvements
+  since then are `6f1a812`, and the branch is pushed.
 - That other session owns `validate.py` and `contract.py` and has been editing
   them concurrently. A full-suite run during one of its writes produced a bogus
   `test_contract.py` failure; re-run before believing a failure there.
