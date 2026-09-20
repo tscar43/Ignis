@@ -1,14 +1,5 @@
 """IoU of predicted risk bands against what the fire actually did.
 
-!! THE NUMBERS BELOW ARE STALE. Three defects found in the 2026-09-20 audit
-!! change every score in this file: the truth mask stopped short of the
-!! validation pass across UTC midnight, a 12 h window was scored against a 6 h
-!! simulation, and grid north was compared against true north. All three are
-!! fixed in the code now. Nothing here has been rerun, because rerunning needs
-!! FIRMS and LANDFIRE. Re-fit and re-measure before quoting any of it; the
-!! prose is kept only because the *questions* it settles are still the ones to
-!! ask, not because the values still hold.
-
 Ground truth here is the union of FIRMS detections up to the validation time,
 rasterized exactly the way ignition seeds are. That is deliberate but limited:
 a detection is an *actively burning* pixel, so a cell that burned and cooled
@@ -33,28 +24,37 @@ down, so IoU would measure spread rate rather than whether the fuel term puts
 fire in better places. Fit on one day, score on the next; `FIRES` holds both.
 
 RESULT, recorded honestly because it is not what we expected: the fuel and
-slope terms do NOT improve IoU, on either fire. Growth-only IoU:
+slope terms do NOT improve IoU, on either fire. Growth-only IoU, re-measured
+2026-09-20 after the audit fixes (midnight-crossing truth, true simulated
+horizon, grid-vs-true north):
 
                         Camp 2018-11-09       Dixie 2021-07-16
                       +1.7 h     +11.4 h     +1.7 h     +10.5 h
-  wind only            0.279       0.385      0.232       0.376
-  wind+fuel            0.284       0.314      0.222       0.353
-  wind+fuel+slope      0.274       0.314      0.259       0.334
+  wind only            0.281       0.370      0.238       0.345
+  wind+fuel            0.273       0.307      0.226       0.325
+  wind+fuel+slope      0.265       0.305      0.266       0.306
+
+The fixes moved every number and changed no conclusion. For the record, the
+pre-fix table read 0.279/0.284/0.274, 0.385/0.314/0.314, 0.232/0.222/0.259,
+0.376/0.353/0.334 -- the one ordering that flipped is Camp at +1.7 h, where
+wind+fuel was ahead by 0.005 and is now behind by 0.008. Both are noise at
+this sample size; neither supports a claim either way.
 
 Camp was run first, and the explanation it suggested -- that a fire under
-35 km/h wind is wind-driven rather than fuel-limited, so a fuel term tuned for
+34 km/h wind is wind-driven rather than fuel-limited, so a fuel term tuned for
 moderate conditions adds noise -- predicts that a slow fire reverses the
 ordering. Dixie's first week is that test: 10 km up the same canyon, sharing
-terrain, fuel vintage and reanalysis cell, at 13 km/h instead of 35. It does
+terrain, fuel vintage and reanalysis cell, at 10 km/h instead of 34. It does
 not reverse. Wind alone still wins at ~10 h, by the same margin. The regime
 explanation is dead: whatever costs the fuel term IoU is not specific to a
 wind-driven fire. (The second scoring pair on each fire agrees with the first;
 `python -m backend.fire.validate` prints all of them.)
 
 What Dixie does show is where the terms earn their place. At +1.7 h in that
-canyon, wind+fuel+slope is the best configuration -- 0.259 against 0.232 --
+canyon, wind+fuel+slope is the best configuration -- 0.266 against 0.238 --
 and slope is what carries it, since fuel alone scores worse than no fuel at
-all. Short range, steep ground, the terrain term helps.
+all. Short range, steep ground, the terrain term helps. This is the one
+finding the rerun strengthened rather than merely preserved.
 
 Three things checked and ruled out:
 
@@ -72,7 +72,7 @@ Three things checked and ruled out:
 
 The leading remaining explanation is the calibration. F_fuel <= 1 everywhere
 and averages ~0.5, so matching burned area forces R0 up two to three times
-(Camp 9.8 -> 27, Dixie 22 -> 48). The fuel runs therefore drive their grass
+(Camp 6.1 -> 16.45, Dixie 14.53 -> 29.45). The fuel runs therefore drive their grass
 corridors at near-full R0 while timber lags, and that spikier footprint may
 score worse against a truth mask built from 375 m detection pixels than a
 smooth wind ellipse does. Untested -- it needs a shape metric, not IoU.

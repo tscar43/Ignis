@@ -257,11 +257,11 @@ the implementation, never the physics.
 
 ## Ground truth, and why the absolute numbers are low
 
-> **Every IoU recorded in this document predates the 2026-09-20 audit and has
-> not been re-measured.** Three fixes change all of them: the truth mask used
-> to stop short of the validation pass across UTC midnight, a 12 h window was
-> scored against a 6 h simulation, and grid north was compared against true
-> north. Re-fit and re-run before quoting any number below.
+> **The ablation was re-measured on 2026-09-20** after the audit fixes
+> (midnight-crossing truth, true simulated horizon, grid-vs-true north).
+> Current growth IoU is in `validate.py`'s docstring; every number moved and
+> no conclusion did. Any other IoU in this document that is not marked as
+> re-measured still predates the fixes -- check before quoting it.
 
 Truth is the union of FIRMS detections up to the validation time, not a NIFC
 perimeter. A detection is an *actively burning* pixel.
