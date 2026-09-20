@@ -2,8 +2,8 @@
   {
     "id": "shelter_01",
     "name": "Auburn High School",
-    "lat": 39.796,
-    "lon": -121.662,
+    "lat": 39.77833,
+    "lon": -121.62924,
     "accepts_pets": false,
     "accessible": true,
     "capacity": 500
@@ -11,8 +11,8 @@
   {
     "id": "shelter_02",
     "name": "Auburn Middle School",
-    "lat": 39.766,
-    "lon": -121.686,
+    "lat": 39.75704,
+    "lon": -121.65269,
     "accepts_pets": true,
     "accessible": true,
     "capacity": 300
@@ -20,8 +20,8 @@
   {
     "id": "shelter_03",
     "name": "Lincoln High School",
-    "lat": 39.81,
-    "lon": -121.58,
+    "lat": 39.78688,
+    "lon": -121.58618,
     "accepts_pets": true,
     "accessible": true,
     "capacity": 400
@@ -29,8 +29,8 @@
   {
     "id": "shelter_04",
     "name": "Auburn Aquatic & Recreation Center",
-    "lat": 39.785,
-    "lon": -121.61,
+    "lat": 39.78082,
+    "lon": -121.60804,
     "accepts_pets": false,
     "accessible": true,
     "capacity": 200
@@ -38,8 +38,8 @@
   {
     "id": "shelter_05",
     "name": "North Auburn Community Center",
-    "lat": 39.805,
-    "lon": -121.64,
+    "lat": 39.77886,
+    "lon": -121.62344,
     "accepts_pets": true,
     "accessible": false,
     "capacity": 150

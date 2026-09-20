@@ -754,3 +754,10 @@ footer {
   background:#c9d2c8;
   cursor:default
 }
+.smoke-line {
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px dashed #d4dfd2;
+  font-size:11px !important;
+  color:#7a5a3a !important
+}
