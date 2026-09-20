@@ -15,7 +15,8 @@ from .models import (ChatRequest, GeocodeRequest, Household, Origin,
 from .routing.routes import calculate_routes
 from .shelters.shelters import find_shelters
 from .shelters.fema import ShelterUnavailable, access_report, read_catalogue
-from .routing.roads import RoadUnavailable, load_graph, read_graph
+from .routing.roads import RoadUnavailable, load_graph, read_graph, within
+from .fire.firms import DEMO_BBOX
 
 app = FastAPI(title='Ignis API', version='0.3.0')
 app.add_middleware(CORSMiddleware,
@@ -34,21 +35,44 @@ async def unavailable_dataset(request, exc):
 
 @app.get('/ready')
 def ready():
-    """Validate bundled demo inputs without calling live upstream services."""
+    """Validate bundled demo inputs without calling live upstream services.
+
+    Every offline surface the demo actually presents is loaded here, including
+    the Camp replay behind `/scenario/*`. Checking only the demo frame left
+    readiness able to report ready while every replay offset returned 503.
+
+    FireUnavailable and the dataset errors are all RuntimeError subclasses and
+    were not caught, so a missing fixture escaped as a 500 from the one
+    endpoint whose job is to say the data is missing.
+    """
     try:
         get_fire_result('demo', 'T0')
+        for offset in ('T0', 'H1', 'H3', 'H6'):
+            get_fire_result('replay', offset)
         load_graph()
         find_shelters()
         demo_info()
         read_graph(ROUTING / 'osm/palisades.graphml')
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(503, 'Demo data missing or invalid') from exc
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+        raise HTTPException(503, f'Demo data missing or invalid: {exc}') from exc
     return {'status': 'ready', 'scope': 'offline_demos'}
 
 
 @app.get('/health')
 def health():
     return {'status': 'ok', 'service': 'wildfire-evacuation-intelligence'}
+
+
+def fire_headers(response, result, source=None):
+    response.headers['X-Fire-Source'] = source or result.source
+    response.headers['X-Fire-Stale'] = str(result.stale).lower()
+    response.headers['X-Fire-Cache-Age'] = str(result.age_seconds)
+    # Cache age is when we last fetched; observation age is how old the data
+    # is. They are different numbers and only the second one says whether the
+    # fire picture is current.
+    if result.observation_age_seconds is not None:
+        response.headers['X-Fire-Observation-Age'] = str(result.observation_age_seconds)
+    response.headers['Cache-Control'] = 'no-store'
 
 
 def fire_for_time(mode, t, response):
@@ -58,18 +82,15 @@ def fire_for_time(mode, t, response):
         raise HTTPException(503, str(exc), headers={'Retry-After': '30'}) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    response.headers['X-Fire-Source'] = result.source
-    response.headers['X-Fire-Stale'] = str(result.stale).lower()
-    response.headers['X-Fire-Cache-Age'] = str(result.age_seconds)
-    response.headers['Cache-Control'] = 'no-store'
-    return result.payload
+    fire_headers(response, result)
+    return result.payload, result
 
 
 @app.get('/fire', response_model=None)
 def fire(response: Response, mode: Literal['demo', 'replay', 'live'] = 'demo',
          t: ReplayTime = 'T0'):
     """Fixed engine area; mode explicitly selects demo, historical replay, or live."""
-    return fire_for_time(mode, t, response)
+    return fire_for_time(mode, t, response)[0]
 
 
 @app.get('/fires', response_model=None)
@@ -83,10 +104,7 @@ def fires(response: Response):
         result = get_national_result()
     except FireUnavailable as exc:
         raise HTTPException(503, str(exc), headers={'Retry-After': '30'}) from exc
-    response.headers['X-Fire-Source'] = 'live-national'
-    response.headers['X-Fire-Stale'] = str(result.stale).lower()
-    response.headers['X-Fire-Cache-Age'] = str(result.age_seconds)
-    response.headers['Cache-Control'] = 'no-store'
+    fire_headers(response, result, source='live-national')
     return result.payload
 
 
@@ -133,9 +151,29 @@ def geocode(request: GeocodeRequest):
 
 @app.post('/plan', response_model=PlanResponse)
 def plan(request: PlanRequest, response: Response):
-    payload = fire_for_time(request.mode, request.t, response)
-    if request.mode == 'live' and response.headers.get('X-Fire-Stale') == 'true':
-        raise HTTPException(503, 'Live routing requires fresh fire data')
+    # Before anything is fetched: the live engine models one fixed bbox, and a
+    # road graph outside it routes perfectly well while reporting no hazards at
+    # all -- the fire polygons are simply elsewhere. An empty intersection that
+    # reads as safety. Checked first because it is a configuration error, and
+    # modelling a fire to then discard the answer helps nobody.
+    if request.mode == 'live' and not within(load_graph(), DEMO_BBOX):
+        raise HTTPException(503, 'Live routing requires a road graph inside the '
+                                 'area the fire model covers; IGNIS_GRAPH_PATH '
+                                 'points outside it')
+    payload, result = fire_for_time(request.mode, request.t, response)
+    # Two separate gates after that, because they fail for different reasons. A
+    # stale cache means the refresh loop is behind; stale observations mean the
+    # satellites are, and no amount of refetching fixes that. Checking only the
+    # first let a valid-but-frozen payload route as though it were current.
+    if request.mode == 'live':
+        if result.stale:
+            raise HTTPException(503, 'Live routing requires a fresh fire fetch')
+        if not result.observations_fresh:
+            age = result.observation_age_seconds
+            raise HTTPException(503, 'Live routing requires fresh fire observations; '
+                                     + (f'newest detection is {age // 60} min old'
+                                        if age is not None
+                                        else 'observation time is unreadable'))
     try:
         return calculate_routes(request, payload)
     except (ShelterUnavailable, EvacuationsUnavailable) as exc:
@@ -147,7 +185,7 @@ def plan(request: PlanRequest, response: Response):
 @app.get('/scenario/{t}', response_model=None)
 def scenario(t: ReplayTime, response: Response):
     """Return an existing fire replay frame unchanged (does not include routes)."""
-    return fire_for_time('replay', t, response)
+    return fire_for_time('replay', t, response)[0]
 
 
 @app.post('/chat')

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..models import Household, Shelter
 from ..routing.roads import DATA_DIR
-from .fema import is_fresh, read_catalogue
+from .fema import ShelterUnavailable, is_fresh, read_catalogue
 
 
 def find_shelters(household: Household | None = None, source="demo"):
@@ -13,8 +13,15 @@ def find_shelters(household: Household | None = None, source="demo"):
         shelters = read_catalogue()['shelters']
     elif source == 'demo':
         path = Path(os.environ.get('IGNIS_SHELTERS_PATH', DATA_DIR / 'shelters.json'))
-        shelters = [Shelter.model_validate(item) for item in
-                    json.loads(path.read_text(encoding='utf-8'))]
+        try:
+            shelters = [Shelter.model_validate(item) for item in
+                        json.loads(path.read_text(encoding='utf-8'))]
+        except (OSError, ValueError, TypeError) as exc:
+            # A missing or malformed catalogue is a server-side dataset
+            # failure, the same one `read_catalogue` already reports this way.
+            # Raw it reached /shelters and /plan as a 500.
+            raise ShelterUnavailable(
+                f'Shelter catalogue at {path} is missing or invalid') from exc
     else:
         raise ValueError('Unknown shelter source')
     return [s for s in shelters

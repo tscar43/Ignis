@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from shapely.geometry import LineString, box, mapping, shape
 
-from backend.api.fire_service import FireResult
+from backend.api.fire_service import (MAX_OBSERVATION_AGE_S, FireResult,
+                                      observation_age_seconds)
 from backend.main import app
 from backend.models import Shelter
 from backend.routing.risk import score_graph
@@ -24,10 +25,15 @@ def scenario(monkeypatch, tmp_path):
     for u, v, seconds in [('s', 'a', 100), ('a', 't', 100), ('s', 'b', 120), ('b', 't', 120)]:
         graph.add_edge(u, v, travel_time=seconds, length=2500,
                        geometry=LineString([(graph.nodes[n]['x'], graph.nodes[n]['y']) for n in (u, v)]))
+    # Observed just now, so the live gate's observation-age check passes. A
+    # fixed timestamp would have quietly started failing the day after it was
+    # written, which is the trap the gate itself exists to catch.
+    observed = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     fire = {'risk_polygons': {b: {'type': 'FeatureCollection', 'features': []}
                              for b in ('current', 'h1', 'h3', 'h6')},
-            'data_as_of': {'firms': '2026-09-20T00:00:00Z', 'weather': '2026-09-20T00:00:00Z'}}
-    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(fire, mode))
+            'data_as_of': {'firms': observed, 'weather': observed}}
+    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(
+        fire, mode, observation_age_seconds=observation_age_seconds(fire)))
     monkeypatch.setattr('backend.routing.routes.load_graph', lambda: graph)
     monkeypatch.setattr('backend.routing.routes.find_shelters', lambda _: [
         Shelter(id='test', name='Fictional test shelter', lat=0, lon=.04, capacity=100)])
@@ -140,8 +146,44 @@ def test_live_plan_requires_current_orders_and_fire(scenario, monkeypatch):
     snapshot['mode'] = 'live'
     write()
     assert client.post('/plan', json=request).status_code == 200
-    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(fire, mode, True, 600))
+    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(
+        fire, mode, True, 600, observation_age_seconds=0))
     assert client.post('/plan', json=request).status_code == 503
+
+
+def test_live_plan_refuses_a_fresh_fetch_of_stale_observations(scenario, monkeypatch):
+    """A recent fetch is not a recent observation.
+
+    The cache only ever measured time since a successful fetch, so a loader
+    returning a valid but frozen payload reported stale=False forever and live
+    routing ran on detections from yesterday. Nothing about the fetch can tell
+    you that; only `data_as_of` can.
+    """
+    _, fire, snapshot, write, _ = scenario
+    snapshot['mode'] = 'live'
+    write()
+    request = {**REQUEST, 'mode': 'live'}
+
+    old_fire = {**fire, 'data_as_of': {
+        **fire['data_as_of'],
+        'firms': (datetime.now(timezone.utc)
+                  - timedelta(seconds=MAX_OBSERVATION_AGE_S + 3600)
+                  ).strftime('%Y-%m-%dT%H:%M:%SZ')}}
+    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(
+        old_fire, mode, False, 0,
+        observation_age_seconds=observation_age_seconds(old_fire)))
+    response = client.post('/plan', json=request)
+    assert response.status_code == 503
+    assert 'observations' in response.json()['detail']
+
+
+def test_live_plan_refuses_an_unreadable_observation_time(scenario, monkeypatch):
+    _, fire, snapshot, write, _ = scenario
+    snapshot['mode'] = 'live'
+    write()
+    monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(
+        fire, mode, False, 0, observation_age_seconds=None))
+    assert client.post('/plan', json={**REQUEST, 'mode': 'live'}).status_code == 503
 
 
 def test_outside_order_coverage_is_not_used(scenario):

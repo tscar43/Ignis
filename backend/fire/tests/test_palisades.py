@@ -61,3 +61,25 @@ def test_coordinates_are_lon_lat_over_los_angeles(index):
             for lon, lat in polygon[0]:
                 assert -119.5 < lon < -117.5, "coordinates look like [lat, lon]"
                 assert 33.5 < lat < 34.7
+
+
+def test_the_ellipse_is_rebuilt_for_every_window_not_frozen_at_the_fit():
+    """The comparison claimed same seed, same wind, only the shape differs.
+
+    It was not true. Ignis read each window's wind out of its own setup while
+    the FARSITE-class baseline reused the direction factors computed once from
+    the calibration window, so the two models were answering about different
+    weather. Only R0 is allowed to carry across windows.
+    """
+    from backend.fire import palisades
+    from backend.weather.nws import Wind
+
+    east = palisades.models(Wind(30.0, 90.0, "2025-01-08T09:00:00Z"))
+    west = palisades.models(Wind(30.0, 270.0, "2025-01-08T21:00:00Z"))
+    assert east["FARSITE-class"]["sf"] != west["FARSITE-class"]["sf"]
+
+    # And the convergence reaches the ellipse too, or it points at grid north
+    # while Ignis points at true north.
+    rotated = palisades.models(Wind(30.0, 90.0, "2025-01-08T09:00:00Z"),
+                               convergence_deg=-13.83)
+    assert rotated["FARSITE-class"]["sf"] != east["FARSITE-class"]["sf"]

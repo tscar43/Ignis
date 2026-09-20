@@ -36,10 +36,16 @@ Cache behavior:
 - On any refresh/validation failure, retain the last good payload. Retry at most
   once per 30 seconds after a failure.
 - With no prior good result, return 503 and Retry-After: 30.
-- X-Fire-Source, X-Fire-Stale and X-Fire-Cache-Age describe the result in headers,
-  exposed through CORS. They are not added to the shared JSON contract.
-- Age measures time in this cache, not satellite observation age. The UI should
-  always display data_as_of.firms and data_as_of.weather.
+- X-Fire-Source, X-Fire-Stale, X-Fire-Cache-Age and X-Fire-Observation-Age
+  describe the result in headers, exposed through CORS. They are not added to
+  the shared JSON contract.
+- X-Fire-Cache-Age measures time in this cache: when we last fetched. It says
+  nothing about how old the data is, and a loader returning a valid but frozen
+  payload reports zero forever. X-Fire-Observation-Age is the age of
+  data_as_of.firms and is the one that answers "is the fire picture current".
+  It is present when the payload carries a readable observation time; live
+  planning gates on it separately from cache staleness. The UI should still
+  display data_as_of.firms and data_as_of.weather.
 - The cache is in memory per process; use one worker to avoid per-worker fetches.
   Restart loses the last good value. A cold fetch blocks until the engine returns;
   its upstream request timeouts apply. There is no background polling.
@@ -206,10 +212,22 @@ not proof of conditions outside that area. Replace the complete snapshot
 atomically when orders are changed/lifted.
 
 Snapshots older than 30 minutes, future-dated snapshots, or any expired record
-are stale. Live planning returns 503 without fresh matching evacuation input
-or when the fire cache is stale. Supplied coverage must contain the complete
-route and access connectors. Invalid configured files return 503. Historical
-Palisades assets are served separately and never treated as fresh live orders.
+are stale. Supplied coverage must contain the complete route and access
+connectors. Invalid configured files return 503. Historical Palisades assets
+are served separately and never treated as fresh live orders.
+
+Live planning returns 503 on any of four separate conditions, because they
+fail for different reasons and only one of them is fixed by refetching:
+
+1. No fresh matching evacuation input for the origin.
+2. The fire cache is stale -- the refresh loop is behind.
+3. The newest fire observation is older than MAX_OBSERVATION_AGE_S, or its
+   timestamp cannot be read. A recent fetch of old detections is not fresh
+   data, and the cache alone cannot tell the difference.
+4. The configured road graph falls outside the bbox the fire engine models.
+   Such a graph routes normally and reports no hazards at all, because the
+   fire polygons are somewhere else -- an empty intersection that reads as
+   safety. Evacuation coverage is checked separately and does not cover this.
 
 ## Deployment readiness
 

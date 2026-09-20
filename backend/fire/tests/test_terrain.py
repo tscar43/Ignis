@@ -64,3 +64,42 @@ def test_steep_cells_are_clamped_not_exponential():
     assert factors.max() <= terrain.CLAMP[1]
     assert factors.min() >= terrain.CLAMP[0]
     assert np.isfinite(factors).all()
+
+
+def test_grid_convergence_is_the_true_bearing_of_a_step_up_the_grid():
+    """EPSG:5070 north is not true north, and the gap is not small.
+
+    Measured the way the audit measured it: project a point, step 1 km in +Y,
+    and ask pyproj for the geodesic azimuth between the two. About -15.7
+    degrees over Paradise -- so a due-north wind was being pointed up a grid
+    column that really runs west of north.
+    """
+    from affine import Affine
+    from pyproj import Transformer
+
+    to_albers = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
+    for lon, lat, expected in [(-121.62, 39.76, -15.72), (-118.60, 34.08, -13.83)]:
+        x, y = to_albers.transform(lon, lat)
+        transform = Affine(120.0, 0.0, x, 0.0, -120.0, y)
+        assert terrain.grid_convergence(transform) == pytest.approx(expected, abs=0.05)
+
+
+def test_convergence_rotates_the_uphill_direction():
+    """Aspect is a geographic bearing; the step bearings it meets are not.
+
+    A north-facing cell has uphill due south on the ground. Under a negative
+    convergence that lands between the south and south-west grid steps, so the
+    south-west plane must gain and the south plane must give some up. Without
+    the rotation both stay where an unrotated compass put them.
+    """
+    slope = np.full((3, 3), 30.0, dtype="float32")
+    aspect = np.zeros((3, 3), dtype="float32")
+
+    plain = terrain.slope_factors(slope, aspect, NEIGHBOURS)
+    rotated = terrain.slope_factors(slope, aspect, NEIGHBOURS,
+                                    convergence_deg=-15.72)
+    south = NEIGHBOURS.index((1, 0))
+    southwest = NEIGHBOURS.index((1, -1))
+
+    assert rotated[southwest].mean() > plain[southwest].mean()
+    assert rotated[south].mean() < plain[south].mean()
