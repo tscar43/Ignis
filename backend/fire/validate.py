@@ -94,9 +94,13 @@ def observed(hotspots, upto: datetime, transform, shape_) -> np.ndarray:
 
 def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
     """Everything the model needs for one seed/validate pair, fetched once."""
+    # Span must reach validate_at: a window that crosses UTC midnight is
+    # otherwise scored against truth that stops before its own validation
+    # pass. Same-day windows still come out at days=2.
+    start_date = seed_at.date() - timedelta(days=1)
     hotspots = firms.fetch_many(
-        firms.ARCHIVE_SOURCES, bbox=bbox,
-        start_date=seed_at.date() - timedelta(days=1), days=2)
+        firms.ARCHIVE_SOURCES, bbox=bbox, start_date=start_date,
+        days=(validate_at.date() - start_date).days + 1)
     codes, profile = landfire.fetch("fuel", bbox=bbox)
     transform, shape_ = profile["transform"], codes.shape
 

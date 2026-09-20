@@ -1,7 +1,7 @@
 """Palisades Fire, January 2025: this engine against the standard model and the truth.
 
-Three windows on the fire's first two days. Each model is fitted once, on the
-first window, and scored on the two after it -- fitting and scoring the same
+Four windows on the fire's first three days. Each model is fitted once, on the
+first window, and scored on the three after it -- fitting and scoring the same
 window would make every IoU a restatement of the calibration, which is the rule
 `validate.py` already works under.
 
@@ -19,6 +19,7 @@ reference. That perimeter is the whole fire, 23,448 acres over three weeks; the
 windows here are twelve hours each, so it is context, not the target.
 
     ./.venv/Scripts/python.exe -m backend.fire.palisades
+    ./.venv/Scripts/python.exe -m backend.fire.palisades --json
 """
 
 from __future__ import annotations
@@ -28,24 +29,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+import rasterio.features
 from pyproj import Transformer
-from shapely.geometry import shape
+from shapely.geometry import mapping, shape
 from shapely.ops import transform as shapely_transform
+from shapely.ops import unary_union
 
 from . import elliptical, firms, validate
+from .spread import _round_coords
 
 UTC = timezone.utc
 BBOX = (-118.72, 34.00, -118.47, 34.16)
 DEMO_DATA = Path(__file__).resolve().parents[2] / "demo_data"
 PERIMETER = DEMO_DATA / "palisades_nifc_perimeter.geojson"
 FIGURE = DEMO_DATA / "palisades_comparison.png"
+REPLAY = DEMO_DATA / "palisades_replay.json"
 
-# (seed pass, validate pass). VIIRS gives no pass in between, so ~12 h is the
-# shortest honest window on this fire -- not a choice.
+# (seed pass, validate pass). Every timestamp is a real VIIRS overpass over
+# this bbox; ~12 h is the shortest honest window the cadence allows, not a
+# choice. Seed on the later pass of an overpass pair, validate on the earlier
+# pass of the next -- the longest gap that stays inside one pair-to-pair step.
 WINDOWS = [
     (datetime(2025, 1, 7, 21, 27, tzinfo=UTC), datetime(2025, 1, 8, 9, 26, tzinfo=UTC)),
     (datetime(2025, 1, 8, 9, 49, tzinfo=UTC), datetime(2025, 1, 8, 20, 45, tzinfo=UTC)),
     (datetime(2025, 1, 8, 21, 8, tzinfo=UTC), datetime(2025, 1, 9, 9, 7, tzinfo=UTC)),
+    (datetime(2025, 1, 9, 9, 30, tzinfo=UTC), datetime(2025, 1, 9, 20, 26, tzinfo=UTC)),
 ]
 
 # dataviz categorical slots 1-3, the set validated for all-pairs separation.
@@ -65,7 +73,7 @@ def models(wind):
 
 
 def run(peak_window_h: int = 8) -> dict:
-    """Fit on window 1, score on 2 and 3. Predictions are kept for the figure."""
+    """Fit on window 1, score on the rest. Predictions are kept for the figure."""
     setups = [validate._setup(s, v, BBOX, peak_window_h) for s, v in WINDOWS]
     fit = setups[0]
     configured = models(fit["wind"])
@@ -102,6 +110,69 @@ def run(peak_window_h: int = 8) -> dict:
 
     return {"windows": windows, "r0": r0,
             "lb": round(elliptical.length_to_breadth(fit["wind"].speed_kmh), 2)}
+
+
+def mask_to_fc(mask: np.ndarray, transform, simplify_m: float = 120.0,
+               close_m: float = 150.0, ndigits: int = 5) -> dict:
+    """One boolean mask as an EPSG:4326 FeatureCollection, [lon, lat].
+
+    Same recipe as `spread.bands_to_geojson` minus the cumulative-band pass,
+    which these masks have no equivalent of: polygonize in metres, close the
+    pinhole lattice that 375 m detection pixels leave behind, simplify, then
+    reproject. Tolerance is coarser and rounding shorter than the live
+    contract's, because this one is a fixture a browser downloads whole.
+    """
+    to_wgs = Transformer.from_crs("EPSG:5070", "EPSG:4326", always_xy=True).transform
+    pieces = [shape(geom) for geom, value in rasterio.features.shapes(
+        mask.astype("uint8"), mask=mask, transform=transform) if value == 1]
+    if not pieces:
+        return {"type": "FeatureCollection", "features": []}
+    geom = (unary_union(pieces).buffer(close_m).buffer(-close_m)
+            .simplify(simplify_m).buffer(0))
+    geom = shapely_transform(to_wgs, geom)
+    parts = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {},
+         "geometry": _round_coords(mapping(part), ndigits)}
+        for part in parts if not part.is_empty]}
+
+
+def export(result: dict, path: Path = REPLAY) -> Path:
+    """Every window as GeoJSON, for the frontend's stepped replay.
+
+    A static fixture on purpose: the demo tab must not hang on a FIRMS round
+    trip mid-presentation. Regenerate with `--json` when WINDOWS moves.
+    """
+    windows = []
+    for window in result["windows"]:
+        setup = window["setup"]
+        transform = setup["transform"]
+        windows.append({key: window[key] for key in (
+            "seed_at", "validate_at", "role", "gap_h", "wind_kmh",
+            "wind_toward", "seed_km2", "observed_km2", "models")} | {
+            "seed": mask_to_fc(setup["ignition"], transform),
+            "observed": mask_to_fc(setup["truth"], transform),
+            "predictions": {name: mask_to_fc(predicted, transform)
+                            for name, predicted in window["predictions"].items()},
+        })
+    path.write_text(json.dumps({
+        "fire": "Palisades Fire, Los Angeles County, California",
+        "generated_at": firms.iso(datetime.now(UTC)),
+        "reseeding": (f"Every window re-seeds from the observed FIRMS "
+                      f"footprint at its own seed pass, never from the "
+                      f"previous prediction. These are {len(windows)} "
+                      f"independent ~12 h forecasts, not one "
+                      f"{round(sum(w['gap_h'] for w in windows))} h run."),
+        "perimeter": ("NIFC's final perimeter is the whole 23,448-acre fire "
+                      "over three weeks. Reference context, not the target "
+                      "these windows are scored against."),
+        "r0_m_per_min": result["r0"], "length_to_breadth": result["lb"],
+        "colors": {"Ignis": IGNIS, "FARSITE-class": FARSITE,
+                   "FARSITE-class, no fuel/slope": HOMOGENEOUS,
+                   "observed": BURNED, "seed": SEED},
+        "windows": windows,
+    }, separators=(",", ":")), encoding="utf-8")
+    return path
 
 
 def _perimeter_5070():
@@ -247,6 +318,8 @@ def figure(result: dict, window_index: int = 2) -> Path:
 
 
 if __name__ == "__main__":
+    import sys
+
     result = run()
     print("fitted R0 (m/min): "
           + ", ".join(f"{name} {value}" for name, value in result["r0"].items()))
@@ -259,4 +332,7 @@ if __name__ == "__main__":
         for name, stats in window["models"].items():
             print(f"    {name:30} {stats['predicted_km2']:6.1f} km2  "
                   f"IoU {stats['iou']:.3f}  growth {stats['iou_growth']:.3f}")
-    print(f"\nwrote {figure(result)}")
+    if "--json" in sys.argv:
+        print(f"\nwrote {export(result)}")
+    else:
+        print(f"\nwrote {figure(result)}")

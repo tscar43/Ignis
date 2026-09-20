@@ -50,37 +50,55 @@ terrain visible, which the contract's consumers need.
 
 ## Palisades 2025: against the standard model, and against the fire
 
-`./.venv/Scripts/python.exe -m backend.fire.palisades`. Three windows over the
-first two days, R0 fitted once on the first and held for the other two. The
-comparator is `elliptical.py`, the Alexander/Finney ellipse FARSITE and the
-commercial tools built on it use, run through this engine's own solver on the
-same seed, wind and grid so the wind shape is the only difference. Growth IoU:
+`./.venv/Scripts/python.exe -m backend.fire.palisades`. Four windows over the
+fire's first three days, R0 fitted once on the first and held for the other
+three. The comparator is `elliptical.py`, the Alexander/Finney ellipse FARSITE
+and the commercial tools built on it use, run through this engine's own solver
+on the same seed, wind and grid so the wind shape is the only difference.
+Growth IoU:
 
 ```
-                              01-07 21:27Z   01-08 09:49Z   01-08 21:08Z
-                                  +12 h          +11 h          +12 h
-                                (fitted)       (held out)     (held out)
-  Ignis, wind^3 + fuel + slope     0.246          0.250          0.395
-  FARSITE-class ellipse            0.256          0.253          0.362
-  FARSITE-class, no fuel/slope     0.141          0.174          0.123
+                            01-07 21:27Z  01-08 09:49Z  01-08 21:08Z  01-09 09:30Z
+                                +12.0 h      +10.9 h       +12.0 h       +10.9 h
+                               (fitted)     (held out)    (held out)    (held out)
+  Ignis, wind^3 + fuel + slope   0.456        0.119         0.347         0.365
+  FARSITE-class ellipse          0.417        0.105         0.326         0.341
+  FARSITE-class, no fuel/slope   0.182        0.088         0.331         0.349
 ```
 
-- **Ignis and the standard ellipse are the same model to within noise** on the
-  two slow windows, 0.01 apart in the ellipse's favour. Ignis wins the third by
-  0.033, the window with the most growth to predict (29 -> 87 km2). Nothing
-  here supports a claim that either shape is better; say so.
-- **The fuel and slope terms carry real signal on this fire**, which is new.
-  Stripping them from the ellipse costs 0.11 to 0.24 growth IoU -- far more
-  than the wind shape is worth, and the opposite of the Camp and Dixie result
-  above. The difference is plausibly the terrain: Palisades ran through steep
-  chaparral canyons where Camp ran across ground the fuel term barely
-  distinguishes. This does not overturn the ablation, but it is the first
-  evidence the terms buy accuracy and not only legibility.
-- **Both models badly under-predict the second night.** 55 and 53 km2 against
-  87 km2 observed, with R0 fitted on the first night at 29 km/h and the second
-  night blowing 36. A single fitted R0 does not transfer across a change in
-  wind regime, which is the calibration weakness `spread.py` already warns
-  about in its R0 comment, now measured.
+**These numbers replace an earlier three-window table, and they are not a
+re-run of the same measurement.** `validate._setup` fetched a fixed two-day
+FIRMS span starting the day before the seed pass, so any window whose
+validation pass fell on the *next* UTC day never saw it: truth stopped at the
+seed pass and the model was scored against the fire's past. Two of the three
+windows, including the calibration one, were affected -- the fit window's
+truth was 13.4 km2 when the real footprint at 09:26Z was 72.0. The span is now
+derived from `validate_at`. Camp and Dixie are same-day windows and are
+unchanged by the fix, so the ablation table above still stands.
+
+- **Ignis edges the standard ellipse on every window**, by 0.014 to 0.039
+  growth IoU. Consistent in direction across four windows, but small, and
+  three of the four are within the spread you would expect from a different
+  choice of overpass. It is not evidence that the cubic wind term is better;
+  it is evidence the two are close.
+- **The fuel and slope terms do not carry the signal the old table showed.**
+  Stripping them costs 0.27 on the fit window and 0.03 on window 2, but on
+  windows 3 and 4 the stripped model is *ahead* of the full ellipse
+  (0.331 vs 0.326, 0.349 vs 0.341). The earlier claim that Palisades was the
+  first fire where the terms bought accuracy was an artifact of the truncated
+  truth. It goes back to matching Camp and Dixie: the terms buy legibility,
+  not IoU.
+- **Every model over-predicts area by roughly 2x on the held-out windows**,
+  174-235 km2 against 86-100 km2 observed. R0 is fitted to the first night, a
+  29 km/h window, and windows 2 and 3 blew 36-37. A single fitted R0 does not
+  transfer across a change in wind regime -- the calibration weakness
+  `spread.py` warns about in its R0 comment, now measured in the other
+  direction from before. Note the over-prediction is partly the truth mask:
+  detections only show actively burning pixels, so observed area is a floor.
+- **Window 2 is the weak one, at 0.119.** Its seed already covers 69 km2 of
+  the 86 km2 eventually observed, so there is very little growth left to get
+  right and growth IoU has almost nothing to divide by. Reported at the same
+  size as the rest, in the figure and in the UI.
 - **No comparison against an actual commercial prediction is possible.**
   Technosylva, Wildfire Analyst and the rest run under contract and publish no
   polygons for historical fires. `palisades.py` says this in its docstring, and
@@ -88,8 +106,10 @@ same seed, wind and grid so the wind shape is the only difference. Growth IoU:
   misreading that it is somebody's product.
 
 The figure is `demo_data/palisades_comparison.png`, regenerated by that
-command. Ground truth is the FIRMS footprint at the validation pass, with the
-NIFC final perimeter (23,448 acres, three weeks) drawn only for context.
+command. `--json` instead writes `demo_data/palisades_replay.json`, the same
+four windows as GeoJSON for the frontend's stepped replay tab. Ground truth is
+the FIRMS footprint at the validation pass, with the NIFC final perimeter
+(23,448 acres, three weeks) drawn only for context.
 
 ## Observation latency, measured on a live fire
 
