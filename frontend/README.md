@@ -1,25 +1,41 @@
 # Ignis frontend
 
-Daniel owns this implementation under the frontend / AI-agent role brief. Start with `npm install`, then `npm run dev` from this directory. `npm run build` produces `dist/`; `npm run lint` checks the source.
+Run `npm install`, then `npm run dev` from `frontend/`. The backend must be running on port 8000. Open the Vite URL. Both localhost and 127.0.0.1 work through the development proxy: browser requests go to `/api/fire` and `/api/plan`, and Vite forwards them to `http://127.0.0.1:8000/fire` and `/plan`.
 
-## Milestones
+`npm run build` produces `dist/`; `npm run lint` checks source. Production hosting must proxy `/api` to the backend, or build with `VITE_API_BASE_URL` set to the backend URL and configure backend CORS for the frontend origin. No credentials belong in Vite environment variables.
 
-1. Implemented: Leaflet map centered on Concow / Paradise.
-2. Implemented: fire fixtures imported read-only from `../demo_data/risk_demo.json`, cumulative bands rendered h6 → h3 → h1 → current, hotspots, wind, fuel overlay, layer toggles, legend and observation timestamps.
-3. Implemented: route comparison with fictional plan JSON in `src/data/plan-demo.json`. No route fixture exists in `demo_data/`; this local fixture leaves that owned directory untouched. Geometry is illustrative, not road-network output. Values are display fixtures, not calculated route metrics.
-4. Pending: Backend `/fire` and `/plan` endpoint URL, request contract, and real routing service. There is no API entry point in this checkout. Verify real FIRMS points and a real backend route on one map before starting milestone 5.
-5–9. Pending in the requested order: stub chat, extraction and editable chips, backend agent tools, scenario replay, polish and three full demo rehearsals. No AI connection has been added ahead of the real-route checkpoint.
+## Milestone status
+
+1–3: map, fixture overlays, and route comparison implemented.
+
+4: frontend API integration implemented, defaulting to Backend demo. Both requests share `mode` and `t=T0`. Planning uses the backend's supported demo origin (39.76, -121.62), one occupant, a vehicle, and no pet/accessibility requirements. Origin/household editing is not part of this checkpoint. Routes, destination coordinates and attributes, metrics, warnings, timestamps, and cache headers come from the backend. The backend still uses synthetic roads and fictional shelters, even with live fire. A real-road milestone completion requires backend data work.
+
+5–8: not started. No chat, extraction, agent, or replay controls are connected.
+
+9: existing styling and offline preview only; full demo rehearsals remain pending.
+
+## Sources and failure behavior
+
+- **Backend demo**: `/fire?mode=demo&t=T0` and `POST /plan` with `mode=demo,t=T0`.
+- **Live fire / synthetic roads**: the same requests with `mode=live,t=T0`. Needs server-side FIRMS credentials and upstream connectivity. This does not turn the road/shelter fixtures into real data.
+- **Offline bundled demo**: explicit opt-in to local `demo_data/risk_demo.json` and `src/data/plan-demo.json`. Never selected automatically after a failed request. Fire/route fixtures are fictional; the local route fixture is independent of the backend graph.
+
+Loading, refresh and retry states clear previous geometry. A 422 plan response shows the backend's detail and keeps the fire map without routes. Fire failure hides plans. Mismatched fire/plan observation timestamps suppress the plan and request a retry. Source changes abort previous requests, with a 90-second client timeout for slow requests. Failed live refreshes can still return the backend's last-good payload; cache staleness is shown explicitly. Cache age is not observation age. Matching observation timestamps do not prove identical underlying payloads; the backend has no shared snapshot identifier.
+
+Each successful refresh remounts map geometry, including the destination marker. Map layer preferences persist. The server's exposure score is displayed as a score, never a probability: each edge contributes intersection length only in its most severe band; weighted km = 10*h1 + 4*h3 + h6. Recommended cost = travel minutes + 4*weighted km. Fastest and recommended can be identical.
 
 ## Offline preview
 
-Run `VITE_OFFLINE=true npm run dev` or `VITE_OFFLINE=true npm run build` to disable external map tiles by default. All fire, route and fuel assets are bundled locally. The street basemap checkbox can also disable tiles. There is no bundled street map: overlays remain available on a neutral background offline. Tile failures display a visible notice.
+`VITE_OFFLINE=true npm run dev` (or build) starts in explicit offline bundled mode with street tiles disabled. All overlay assets are bundled. The street basemap checkbox can independently disable tiles; no street basemap is bundled. Turning off tiles does not disable API calls in Backend demo or live mode.
 
-The demo is explicitly fictional, shows dated observations in Pacific time, and must not be used for navigation. No household input, API keys, storage or LLM calls are present. Basemap tiles, when enabled, request OpenStreetMap resources.
+Protected backend/fire, backend/weather, backend/routing and demo_data files are consumed without edits. Geometry remains GeoJSON [lon, lat]; fuel image bounds use Leaflet [lat, lon]. No household persistence or LLM calls are present.
 
-## Integration handoff
+## Verification of this integration
 
-The map accepts `fire`, `plan`, `layers`, and `basemap` props; the route panel accepts `plan`. These consume the brief's payload shape. Replace the bundled data only after confirming the actual Backend contract. Do not silently fall back to fictional routes when live requests fail. Shelter map position currently comes from the recommended demo line's endpoint; live shelter coordinates need to be confirmed with Backend. Fuel bounds use Leaflet `[lat, lon]` order; all route/fire geometry remains GeoJSON `[lon, lat]`.
+- `npm test`: API request contracts, source/cache headers, backend error details/status, and invalid JSON handling.
+- Local browser + running backend: matching demo/T0 requests, two 12-minute / 9.584-km routes, backend destination attributes, and successful retries.
+- A request modified by the browser harness to `has_vehicle=false` exercises the real backend 422 response: no route cards or lines remain, while fire stays visible.
+- Browser-injected responses exercise fire 503 failures, stale-cache headers, changed route geometry, and mismatched observation timestamps. Failures never activate bundled fixtures; explicit offline selection does. Mismatched observations suppress routes.
+- Checked mobile at 390 px without horizontal overflow.
 
-## Browser verification
-
-Checked the rendered map, projected-layer toggle, fuel image overlay, offline notice, both route cards, persistent disclaimer, and a 390 px mobile viewport with no horizontal overflow. Browser console showed no application errors. These checks are not the full demo rehearsals required by milestone 9.
+Live upstream fire availability and a real road network were not validated. These checks cover only Milestone 4 frontend integration, not full demo rehearsals.

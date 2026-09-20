@@ -431,3 +431,18 @@ footer {
     font-size:11px
   }
 }
+
+.data-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+.data-controls label { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.data-controls p { flex-basis: 100%; font-size: 12px; color: #576c62; }
+select, button { font: inherit; border: 1px solid #9cb3a8; border-radius: 6px; background: white; color: #273e3c; padding: 8px 12px; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .5; }
+button:focus-visible, select:focus-visible { outline: 3px solid #bd642e; outline-offset: 3px; }
+.request-state { padding: 36px 22px; min-height: 140px; }
+.request-state p { margin: 12px 0; font-size: 13px; }
+.request-state.error { background: #fff4df; color: #704721; }
+.exposure-method { margin-top: 15px; font-size: 12px; }
+.exposure-method p { margin-top: 8px; }
+.timestamps > span { max-width: 100%; }
+@media (max-width: 560px) { .data-controls label { flex-wrap: wrap; } }
