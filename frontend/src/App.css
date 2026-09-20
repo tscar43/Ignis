@@ -898,3 +898,71 @@ footer {
   padding-top:12px;
   border-top:1px solid #eef2ec
 }
+.palisades-scores {
+  margin:20px 0 0;
+  padding-top:16px;
+  border-top:1px solid #eef2ec
+}
+.palisades-scores figcaption {
+  font-size:11px;
+  letter-spacing:.6px;
+  font-weight:600;
+  text-transform:uppercase;
+  color:#62746a;
+  margin-bottom:6px
+}
+.palisades-scores svg {
+  width:100%;
+  height:auto;
+  display:block
+}
+.palisades-scores .grid {
+  stroke:#eef2ec;
+  stroke-width:1
+}
+.palisades-scores .tick {
+  font-size:10px;
+  fill:#8a9a90
+}
+.palisades-scores .role-tick {
+  font-size:9px;
+  fill:#b0bcb4
+}
+.palisades-scores .group-hit {
+  fill:transparent;
+  cursor:pointer
+}
+.palisades-scores .group-hit:hover {
+  fill:#f4f7f2
+}
+.palisades-scores .group-hit.active {
+  fill:#eef3ec;
+  stroke:#d4dfd2;
+  stroke-width:1
+}
+.scores-legend {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 16px;
+  margin-top:8px;
+  font-size:11px;
+  color:#62746a
+}
+.scores-legend span {
+  display:flex;
+  align-items:center;
+  gap:6px
+}
+.scores-legend i {
+  width:10px;
+  height:10px;
+  border-radius:2px;
+  display:inline-block
+}
+.scores-legend i.hatched {
+  background:repeating-linear-gradient(45deg,#fff,#fff 2px,#8a9a90 2px,#8a9a90 4px);
+  border:1px solid #c9d2c8
+}
+.scores-legend .legend-note {
+  color:#8a9a90
+}

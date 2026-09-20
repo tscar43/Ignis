@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { GeoJSON, MapContainer, TileLayer, Tooltip } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { utc } from '../bands'
+import PalisadesScores from './PalisadesScores'
 
 // Fixed frame across every pass: the whole point is watching the footprint
 // grow, and a map that refits its bounds each step hides exactly that. So the
@@ -86,6 +87,8 @@ export default function PalisadesView({ data, basemap, onBasemap }) {
           <td>{fitted ? <span className="muted">{stats.iou.toFixed(3)} (fitted)</span> : stats.iou.toFixed(3)}</td>
         </tr>)}</tbody>
       </table>
+
+      <PalisadesScores data={data} step={step} onStep={setStep} />
 
       <div className="layers" style={{ marginTop: '0.75rem' }}>
         <label><input type="checkbox" checked={showFarsite} onChange={event => setShowFarsite(event.target.checked)} /> Show the {FARSITE} baseline on the map</label>
