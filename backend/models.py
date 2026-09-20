@@ -100,3 +100,6 @@ class GeocodeRequest(Model):
 
 class ChatRequest(Model):
     messages: list[dict[str, str]] = Field(max_length=100)
+    # Which scenario the assistant plans against, same values as PlanRequest.
+    # Defaults to demo, so a client that only sends messages is unaffected.
+    mode: Literal['demo', 'replay', 'live'] = 'demo'

@@ -100,24 +100,32 @@ def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def map_key() -> str:
-    """FIRMS MAP_KEY from the environment, falling back to the repo's .env.
+def env_value(name: str) -> str:
+    """A setting from the environment, falling back to the repo's .env.
 
-    Values in .env may be quoted; strip them. A quoted key reaches the API with
+    Values in .env may be quoted; strip them. A quoted key reaches an API with
     the quotes attached and comes back as a flat "Invalid MAP_KEY." with no hint
     that the key itself is fine.
+
+    ponytail: enough of a .env reader for two keys -- no export, no
+    interpolation, no multi-line values. Swap in python-dotenv if this grows.
     """
-    key = os.environ.get("FIRMS_MAP_KEY")
-    if not key:
+    value = os.environ.get(name)
+    if not value:
         env = REPO_ROOT / ".env"
         if env.exists():
             match = re.search(
-                r"^\s*FIRMS_MAP_KEY\s*=\s*(.+?)\s*$",
+                rf"^\s*{re.escape(name)}\s*=\s*(.+?)\s*$",
                 env.read_text(encoding="utf-8"),
                 re.MULTILINE,
             )
-            key = match.group(1) if match else None
-    key = (key or "").strip().strip("'\"")
+            value = match.group(1) if match else None
+    return (value or "").strip().strip("'\"")
+
+
+def map_key() -> str:
+    """FIRMS MAP_KEY from the environment or .env."""
+    key = env_value("FIRMS_MAP_KEY")
     if not key or key == "your_key_here":
         raise FirmsError(
             "No FIRMS MAP_KEY. Copy .env.example to .env and fill it in "

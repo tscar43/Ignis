@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .api.chat import reply as chat_reply
 from .api.evacuations import EvacuationsUnavailable, read_evacuations, origin_orders
 from .api.palisades_demo import (DemoUnavailable, PalisadesDemoRequest, PalisadesPlanResponse,
                                  ROUTING, demo_info, plan_demo)
@@ -189,8 +190,11 @@ def scenario(t: ReplayTime, response: Response):
 
 
 @app.post('/chat')
-def chat(request: ChatRequest):
-    raise HTTPException(501, 'Frontend agent integration is not installed yet')
+def chat(request: ChatRequest, response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    # `plan` itself is handed over, not a copy of its body: the assistant then
+    # routes through the same staleness, bbox and evacuation gates the map does.
+    return chat_reply(request, plan)
 
 
 @app.get('/evacuations')
