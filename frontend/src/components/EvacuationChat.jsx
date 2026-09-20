@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
 
+const EXAMPLE = 'I’m at 39.76, -121.62. Two of us, one car, no pets. My mother has asthma.'
+
 // The assistant plans through the same POST /plan the map uses, so a route it
 // describes is a route the router actually produced. When it returns one, it is
 // handed up so the map draws exactly what is being talked about.
@@ -10,9 +12,7 @@ export default function EvacuationChat({ api, mode = 'demo', onPlan }) {
   const [error, setError] = useState(null)
   const log = useRef(null)
 
-  async function send(event) {
-    event.preventDefault()
-    const text = draft.trim()
+  async function ask(text) {
     if (!text || pending) return
     // The whole conversation goes up each turn; the API is stateless.
     const next = [...messages, { role: 'user', content: text }]
@@ -36,41 +36,63 @@ export default function EvacuationChat({ api, mode = 'demo', onPlan }) {
       setError(failure.message)
     } finally {
       setPending(false)
-      log.current?.scrollTo(0, log.current.scrollHeight)
+      requestAnimationFrame(() => log.current?.scrollTo(0, log.current.scrollHeight))
     }
   }
 
+  const started = messages.length > 0 || pending
+
   return <section className="evacuation-chat" aria-labelledby="chat-title">
-    <h3 id="chat-title">Household assistant</h3>
-    <p className="chat-disclaimer">
-      An AI assistant. It routes with the same model as the map, but it can still be
-      wrong about everything else — messages are sent to Anthropic to generate a reply.
-      Modeled and historical data, not an official source. Follow official evacuation
-      orders, and call 911 if you are in immediate danger.
-    </p>
-    <div className="chat-log" role="log" aria-label="Conversation" aria-live="polite" ref={log}>
-      {messages.length === 0 && <p className="chat-empty">
-        Tell it where you are and who is with you — for the bundled scenario, try
-        “I’m at 39.76, -121.62 with two people, a dog and one car.”
-      </p>}
+    <div className="chat-heading">
+      <div>
+        <p className="eyebrow">ASK THE ASSISTANT</p>
+        <h2 id="chat-title">Where are you, and who is with you?</h2>
+      </div>
+      <span className="chat-badge">● AI · plans with the live router</span>
+    </div>
+
+    {!started && <p className="chat-intro">
+      Describe your household in plain language. The assistant routes you with the
+      same model the map uses — it cannot invent a road or a travel time.
+    </p>}
+
+    {started && <div className="chat-log" role="log" aria-label="Conversation"
+      aria-live="polite" ref={log}>
       {messages.map((item, index) => <p className={`chat-message ${item.role}`} key={index}>
         <strong>{item.role === 'user' ? 'You' : 'Assistant'}: </strong>{item.content}
       </p>)}
-      {pending && <p className="chat-message assistant" role="status">Planning a route…</p>}
-    </div>
+      {pending && <p className="chat-message assistant pendingf" role="status">
+        Planning a route…
+      </p>}
+    </div>}
+
     {error && <p className="route-warning" role="alert">{error}</p>}
-    <form onSubmit={send} className="chat-composer">
-      <label htmlFor="chat-input">Message the assistant</label>
+
+    <form onSubmit={event => { event.preventDefault(); ask(draft.trim()) }}
+      className="chat-composer">
+      <label className="sr-only" htmlFor="chat-input">Message the evacuation assistant</label>
       <textarea id="chat-input" value={draft} rows={2} maxLength={4000} disabled={pending}
-        placeholder="Where are you, and who is evacuating with you?"
+        placeholder="e.g. I’m at 39.76, -121.62 with two people and a dog."
         onChange={event => setDraft(event.target.value)}
         onKeyDown={event => {
           // Enter sends, Shift+Enter is a newline: this is a chat box, not a form field.
-          if (event.key === 'Enter' && !event.shiftKey) send(event)
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
+            ask(draft.trim())
+          }
         }} />
       <button type="submit" disabled={pending || !draft.trim()}>
-        {pending ? 'Planning…' : 'Send'}
+        {pending ? 'Planning…' : 'Ask'}
       </button>
     </form>
+
+    {!started && <button type="button" className="chat-example" disabled={pending}
+      onClick={() => ask(EXAMPLE)}>Try: “{EXAMPLE}”</button>}
+
+    <p className="chat-disclaimer">
+      AI assistant on modeled and historical demo data — not an official source.
+      Messages are sent to Anthropic to generate a reply. Follow official evacuation
+      orders, and call 911 if you are in immediate danger.
+    </p>
   </section>
 }
