@@ -8,13 +8,14 @@ from shapely import wkt
 from shapely.geometry import LineString
 
 DATA_DIR = Path(__file__).resolve().parent / 'demo'
+OSM_PATH = Path(__file__).resolve().parent / 'osm' / 'paradise.graphml'
 GEOD = Geod(ellps='WGS84')
 
 
 @lru_cache(maxsize=1)
 def load_graph():
     """Read only a local GraphML cache; never fetch roads in a request."""
-    path = Path(os.environ.get('IGNIS_GRAPH_PATH', DATA_DIR / 'graph.graphml'))
+    path = Path(os.environ.get('IGNIS_GRAPH_PATH', OSM_PATH))
     graph = nx.read_graphml(path, force_multigraph=True)
     if not graph.is_directed():
         raise ValueError('Road graph must be directed')

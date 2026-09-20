@@ -1,0 +1,2 @@
+# Only needed to rebuild road caches; the API reads them using NetworkX.
+osmnx>=2.1,<3

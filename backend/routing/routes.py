@@ -82,7 +82,11 @@ def calculate_routes(request, fire, graph=None):
     recommended = describe_route(scored, recommended_edges, 'recommended', origin)
     fastest = describe_route(scored, fastest_edges, 'fastest', origin)
     warnings = compare_routes(recommended, fastest)
-    warnings.append('Synthetic demonstration data; roads, fire, shelter availability and times are not operational guidance.')
+    if graph.graph.get('source') == 'synthetic demonstration':
+        warnings.append('Roads are synthetic demonstration data.')
+    else:
+        warnings.append('Routes use a cached road network with estimated travel times; traffic and turn restrictions are not modeled.')
+    warnings.append('Shelter capacity and availability are not verified; bundled shelters are fictional demonstration locations.')
     warnings.append('Official evacuation orders and road closures override these modeled routes.')
     if max(snap_distance, destination_snap) > 1:
         warnings.append(f'Routes begin/end at road nodes: origin snap {snap_distance:.0f} m, shelter snap {destination_snap:.0f} m. Access segments are not modeled.')

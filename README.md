@@ -125,3 +125,13 @@ polygons and a synthetic outer bypass. This supersedes the routing limitation
 above. Replay T0 still returns 422 because all fictional shelters are inside
 the current fire. See [the API guide](backend/api/README.md) for a working
 request and agent error handling. `/chat` remains a frontend-owned 501 stub.
+
+## Real-road routing update
+
+`/plan` now defaults to the cached OpenStreetMap drive network for Paradise,
+California (1,279 nodes, 2,863 directed edges). This supersedes the synthetic-road
+description above. Requests remain offline and the synthetic fixture remains
+available explicitly through `IGNIS_GRAPH_PATH`. Shelters are still fictional;
+this is local demo coverage, not nationwide routing. See
+[road cache details](backend/routing/osm/README.md) and the
+[API guide](backend/api/README.md).

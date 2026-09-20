@@ -24,7 +24,11 @@ def get_fire_data():
 
 @pytest.fixture(autouse=True)
 def synthetic_routing_fire(monkeypatch):
+    monkeypatch.setenv('IGNIS_GRAPH_PATH', str(Path(__file__).parents[1] / 'routing/demo/graph.graphml'))
+    load_graph.cache_clear()
     monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(get_fire_data(), 'demo'))
+    yield
+    load_graph.cache_clear()
 
 
 

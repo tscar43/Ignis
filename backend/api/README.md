@@ -50,13 +50,19 @@ Cache behavior:
 POST /plan accepts origin, household, mode (demo/replay/live), and t.
 It uses the same fire service as /fire and reports cache metadata in headers.
 
-The road/shelter fixtures under backend/routing/demo are **synthetic** and are
-separate from Justin's protected demo_data. They exercise routing and scoring;
-they are not a real evacuation network. The default origin 39.76, -121.62 has
-a reachable shelter in demo mode via the outer bypass around the published
-current-fire polygons. Replay T0 still returns 422: the original road network
-is blocked and all four fictional shelters are inside the current fire.
-Do not interpret that as a real-world absence of evacuation options.
+The default road graph is the real OpenStreetMap drive network under
+`backend/routing/osm/paradise.graphml`: 1,279 nodes and 2,863 directed edges
+around Paradise, California. It is loaded locally; requests never download
+roads. OSM road geometry, one-way connections and estimated travel times are
+preserved. This covers the existing demo area, not the entire US map.
+See [cache provenance and rebuild instructions](../routing/osm/README.md).
+
+The default origin 39.76, -121.62 returns a plan using these roads and the
+published demo fire polygons. Destinations under `backend/routing/demo` remain
+**fictional shelters**, with unverified capacity and availability. They are not
+real evacuation destinations. Replay T0 returns 422 because all four fictional
+shelters are inside the current fire. Do not interpret that as a real-world
+absence of evacuation options.
 
 Agent smoke test (no keys or network required):
 
@@ -67,9 +73,21 @@ Invoke-RestMethod http://localhost:8000/plan -Method Post -ContentType 'applicat
 Treat a 422 response as an unavailable plan and show its `detail`; never invent
 a route. `/chat` remains a 501 stub for the frontend agent to implement.
 
-Unit tests inject separate synthetic hazards to verify a 4-minute direct route
-versus a 9-minute lower-exposure bypass. Generate only these backend-owned
-fixtures with `./.venv/Scripts/python.exe scripts/build_demo.py`.
+`IGNIS_GRAPH_PATH` selects a different prepared GraphML file and
+`IGNIS_SHELTERS_PATH` selects a matching shelter JSON file with the existing
+Shelter fields. Restart after changing configuration or replacing a road cache.
+To explicitly use the old synthetic network for a deterministic presentation:
+
+```powershell
+$env:IGNIS_GRAPH_PATH = 'backend/routing/demo/graph.graphml'
+```
+
+Unit tests select this synthetic graph and inject separate synthetic hazards to
+verify a 4-minute direct route versus a 9-minute lower-exposure bypass. Generate
+only those backend-owned fixtures with
+`./.venv/Scripts/python.exe scripts/build_demo.py`. Integration tests use the real
+OSM cache and published fire payloads, checking road geometry, current-fire
+avoidance, household filtering and blocked replay behavior.
 
 The engine output feeds route scoring as plain dictionaries. Current-fire edges
 are blocked for both route types. Each remaining edge uses its most severe
@@ -85,7 +103,9 @@ Lower bands on a long edge are omitted by this edge-level approximation.
 Recommended minimizes time plus exposure cost; fastest minimizes time to the same
 selected eligible shelter. Coordinates are [lon, lat]; output units are minutes
 and kilometres. Snap distances over 1 km are rejected. Access segments, traffic,
-live capacity and official road closures are not modeled.
+live capacity, turn restrictions and official road closures are not modeled.
+Origin/destination access segments can be hundreds of metres and are not
+routed or assessed for fire exposure; the response discloses snap distances.
 
 GET /shelters filters static fictional shelter data. POST /geocode recognizes
 123 Oak St / Street only. POST /chat remains 501 pending the frontend-owned agent.
@@ -102,7 +122,6 @@ current-fire blocking and shelter constraints. End-to-end routing tests also use
 the published demo/replay payloads without substituting synthetic hazards.
 All tests run offline.
 
-Next: prepare a real cached OSM road graph and approved shelter catalogue outside
-protected demo_data, then validate end-to-end route coverage and calibrate costs.
-After that, precompute fire-plus-route replay snapshots and host the frontend
-agent. No fire-model changes are needed for this integration.
+Next: supply an approved shelter catalogue and validate its access routes and
+coverage. The frontend agent can already consume `/plan`; real-road routing
+needs no fire-model or response-schema changes.
