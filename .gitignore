@@ -1,3 +1,6 @@
+node_modules/
+dist/
+.next/
 # Secrets
 .env
 .env.local
@@ -45,3 +48,4 @@ htmlcov/
 # Small backend-owned synthetic routing fixture
 !backend/routing/demo/graph.graphml
 cache/
+.playwright-mcp/
