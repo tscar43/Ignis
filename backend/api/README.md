@@ -125,3 +125,12 @@ All tests run offline.
 Next: supply an approved shelter catalogue and validate its access routes and
 coverage. The frontend agent can already consume `/plan`; real-road routing
 needs no fire-model or response-schema changes.
+
+## Local FEMA shelter preview
+
+See [shelter integration](../shelters/README.md) for the source, local refresh,
+nullable policy fields, and reviewed-entrance requirements. `GET /shelters/catalog`
+shows the real Butte County catalogue and access gaps; `GET /shelters?source=fema`
+filters eligible records. `POST /plan` accepts `shelter_source=fema`. Defaults
+retain the fictional demo. Closed/stale/unknown-required records never silently
+fall back to demo destinations.

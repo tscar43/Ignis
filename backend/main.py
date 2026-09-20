@@ -8,6 +8,8 @@ from .models import (ChatRequest, GeocodeRequest, Household, Origin,
                      PlanRequest, PlanResponse, ReplayTime, Shelter)
 from .routing.routes import calculate_routes
 from .shelters.shelters import find_shelters
+from .shelters.fema import ShelterUnavailable, access_report, read_catalogue
+from .routing.roads import load_graph
 
 app = FastAPI(title='Ignis API', version='0.3.0')
 app.add_middleware(CORSMiddleware,
@@ -44,9 +46,24 @@ def fire(response: Response, mode: Literal['demo', 'replay', 'live'] = 'demo',
 
 @app.get('/shelters', response_model=list[Shelter])
 def shelters(accepts_pets: bool = False, wheelchair_accessible: bool = False,
-             occupants: int = Query(default=1, ge=1, le=100)):
-    return find_shelters(Household(accepts_pets=accepts_pets,
-        wheelchair_accessible=wheelchair_accessible, occupants=occupants))
+             occupants: int = Query(default=1, ge=1, le=100),
+             source: Literal['demo', 'fema'] = 'demo'):
+    try:
+        return find_shelters(Household(accepts_pets=accepts_pets,
+            wheelchair_accessible=wheelchair_accessible, occupants=occupants), source=source)
+    except ShelterUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.get('/shelters/catalog')
+def shelter_catalog():
+    try:
+        data = read_catalogue()
+    except ShelterUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    graph = load_graph()
+    data['access'] = {s.id: access_report(s, graph) for s in data['shelters']}
+    return data
 
 
 @app.post('/geocode', response_model=Origin)
@@ -62,6 +79,8 @@ def plan(request: PlanRequest, response: Response):
     payload = fire_for_time(request.mode, request.t, response)
     try:
         return calculate_routes(request, payload)
+    except ShelterUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

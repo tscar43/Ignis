@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 import networkx as nx
-from shapely.geometry import Point, shape
+from shapely.geometry import LineString, Point, shape
 from shapely.ops import unary_union
 
 from ..models import PlanResponse, Route, RouteGeometry, ExposureBreakdown
@@ -63,19 +63,36 @@ def calculate_routes(request, fire, graph=None):
     current = unary_union([shape(f['geometry']) for f in fire['risk_polygons']['current']['features']])
     if current.intersects(Point(request.origin.lon, request.origin.lat)):
         raise ValueError('Origin is inside the modeled current fire region')
+    origin_node = graph.nodes[origin]
+    origin_connector = LineString([(request.origin.lon, request.origin.lat),
+                                   (origin_node['x'], origin_node['y'])])
+    if current.intersects(origin_connector):
+        raise ValueError('Origin access to the road network intersects the current fire region')
     scored = score_graph(graph, fire)
     candidates = []
-    for shelter in find_shelters(request.household):
+    shelters = (find_shelters(request.household) if request.shelter_source == 'demo'
+                else find_shelters(request.household, source=request.shelter_source))
+    for shelter in shelters:
         if current.intersects(Point(shelter.lon, shelter.lat)):
             continue
         try:
-            destination, destination_snap = nearest_node(graph, shelter.lat, shelter.lon)
+            if shelter.source == 'fema' and shelter.entrance is None:
+                continue
+            target = shelter.entrance or shelter
+            destination, destination_snap = nearest_node(
+                graph, target.lat, target.lon, max_distance_m=50 if shelter.source == 'fema' else 1000)
+            node = graph.nodes[destination]
+            connector = LineString([(node['x'], node['y']), (target.lon, target.lat)])
+            if current.intersects(connector):
+                continue
             recommended = route_edges(scored, origin, destination, 'risk_cost')
             cost = sum(scored[u][v][k]['risk_cost'] for u, v, k in recommended)
             candidates.append((cost, shelter.id, shelter, destination, destination_snap, recommended))
         except (ValueError, nx.NetworkXNoPath):
             continue
     if not candidates:
+        if request.shelter_source == 'fema':
+            raise ValueError('No eligible FEMA shelter: requires a fresh OPEN record, household capacity/policies, a reviewed entrance within 50 m of the road network, and an unblocked route')
         raise ValueError('No reachable shelter satisfies the household constraints and current-fire blocks')
     _, _, shelter, destination, destination_snap, recommended_edges = min(candidates, key=lambda c: (c[0], c[1]))
     fastest_edges = route_edges(scored, origin, destination, 'travel_time')
@@ -86,7 +103,11 @@ def calculate_routes(request, fire, graph=None):
         warnings.append('Roads are synthetic demonstration data.')
     else:
         warnings.append('Routes use a cached road network with estimated travel times; traffic and turn restrictions are not modeled.')
-    warnings.append('Shelter capacity and availability are not verified; bundled shelters are fictional demonstration locations.')
+    if shelter.source == 'demo':
+        warnings.append('Shelter capacity and availability are not verified; bundled shelters are fictional demonstration locations.')
+    else:
+        warnings.append('FEMA status and nominal capacity are source reports, not guaranteed available beds; confirm with the operator.')
+        warnings.append('The route ends at a road node near a reviewed entrance; the access connector is not a modeled driving route.')
     warnings.append('Official evacuation orders and road closures override these modeled routes.')
     if max(snap_distance, destination_snap) > 1:
         warnings.append(f'Routes begin/end at road nodes: origin snap {snap_distance:.0f} m, shelter snap {destination_snap:.0f} m. Access segments are not modeled.')
