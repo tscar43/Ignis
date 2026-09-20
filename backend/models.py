@@ -20,6 +20,9 @@ class Household(Model):
     has_vehicle: bool = True
     accepts_pets: bool = False
     wheelchair_accessible: bool = False
+    # Asthma, COPD, pregnancy, infants. Prefers routes out of the modelled
+    # downwind plume; never permits one an evacuation order forbids.
+    respiratory_sensitive: bool = False
 
 
 class PlanRequest(Model):
@@ -66,6 +69,9 @@ class ExposureBreakdown(Model):
     h1: float = Field(default=0, ge=0)
     h3: float = Field(default=0, ge=0)
     h6: float = Field(default=0, ge=0)
+    # Kilometres inside the modelled downwind plume. Overlaps the bands above
+    # rather than partitioning with them, so do not sum the five.
+    smoke: float = Field(default=0, ge=0)
 
 
 class Route(Model):

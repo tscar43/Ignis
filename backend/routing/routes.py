@@ -22,8 +22,10 @@ def describe_route(graph, edges, kind, start):
     coords, names = [], []
     seconds = metres = 0.0
     breakdown = dict.fromkeys(BANDS, 0.0)
+    breakdown['smoke'] = 0.0
     for u, v, key in edges:
         edge = graph[u][v][key]
+        breakdown['smoke'] += edge.get('smoke_km', 0.0)
         line = list(edge['geometry'].coords)
         node = graph.nodes[u]
         if Point(line[-1]).distance(Point(node['x'], node['y'])) < Point(line[0]).distance(Point(node['x'], node['y'])):
@@ -40,6 +42,8 @@ def describe_route(graph, edges, kind, start):
         node = graph.nodes[start]
         coords = [(node['x'], node['y'])] * 2
     distance = metres / 1000
+    # `exposure` stays a fire number, so a smoke-avoiding route is not scored
+    # as more dangerous than the one it replaced. Smoke is reported separately.
     exposure = sum(WEIGHTS[b] * breakdown[b] for b in BANDS) / (10 * distance) if distance else 0
     return Route(type=kind, geometry=RouteGeometry(coordinates=coords),
                  travel_time_min=round(seconds / 60, 3), distance_km=round(distance, 3),
@@ -111,6 +115,7 @@ def calculate_routes(request, fire, graph=None, *, evacuation_data=None, shelter
     zones = [shape(f['geometry']) for f in snapshot['features']
              if f['properties']['level'] in ('order', 'warning')] if snapshot and apply_orders else []
     graph = graph if graph is not None else load_graph()
+    avoid_smoke = request.household.respiratory_sensitive
     origin, snap_distance = nearest_node(graph, request.origin.lat, request.origin.lon)
     current = unary_union([shape(f['geometry']) for f in fire['risk_polygons']['current']['features']])
     blocked = unary_union([current] + [shape(f['geometry']) for f in fire['risk_polygons']['h1']['features']])
@@ -128,7 +133,7 @@ def calculate_routes(request, fire, graph=None, *, evacuation_data=None, shelter
         raise ValueError('Origin access enters an evacuation order or warning zone')
     if coverage is not None and not coverage.covers(origin_connector):
         raise ValueError('Origin access is outside evacuation data coverage')
-    scored = score_graph(graph, fire)
+    scored = score_graph(graph, fire, avoid_smoke=avoid_smoke)
     for u, v, key, edge in list(scored.edges(keys=True, data=True)):
         line = oriented_line(scored, u, edge)
         if (blocked.intersects(line) or not order_allows(line, zones, origin_point)
@@ -157,7 +162,12 @@ def calculate_routes(request, fire, graph=None, *, evacuation_data=None, shelter
                     or any(z.intersects(connector) or z.intersects(target_point) for z in zones)
                     or (coverage is not None and not coverage.covers(connector))):
                 continue
-            edges = route_edges(scored, origin, destination, 'travel_time')
+            # risk_cost, not travel_time: it is travel minutes plus the
+            # weighted hazard penalty risk.py computes. Routing on raw
+            # travel_time meant WEIGHTS and RISK_LAMBDA were calculated for
+            # every edge and then never consulted, so the h1/h3/h6 bands only
+            # ever mattered where they blocked an edge outright.
+            edges = route_edges(scored, origin, destination, 'risk_cost')
             if not edges:
                 continue  # A node snap alone is not a driving route to a shelter.
             seconds = sum(scored[u][v][k]['travel_time'] for u, v, k in edges)
@@ -190,6 +200,15 @@ def calculate_routes(request, fire, graph=None, *, evacuation_data=None, shelter
     if evacuation['origin_orders']:
         warnings.append('Origin has evacuation information: read evacuation.origin_orders for the issuing authority and instructions.')
     warnings.append('Routes exclude current fire and 1-hour risk. These checks do not certify safety.')
+    if avoid_smoke:
+        warnings.append('Smoke preference applied: routes prefer to stay out of the modeled '
+                        'downwind plume. This is the burning footprint swept along the forecast '
+                        'wind, not measured air quality, and it never overrides an evacuation '
+                        'order. Anyone with a respiratory condition should follow medical advice '
+                        'and official instructions over this route.')
+        if all(r.exposure_breakdown_km.smoke for r in routes):
+            warnings.append('Every available route still passes through the modeled plume; '
+                            'the preference could only reduce it, not avoid it.')
     if apply_orders:
         warnings.append('Routes avoid entering supplied evacuation order/warning zones; an origin inside a zone may exit without re-entry.')
     if graph.graph.get('source') == 'synthetic demonstration':
