@@ -117,3 +117,11 @@ the default origin has no eligible route under the published demo hazards.
 The API returns 422 in that case. POST /chat awaits the frontend-owned agent.
 
 Run ./.venv/Scripts/python.exe -m pytest -q to check the integration offline.
+
+## Demo routing update
+
+The default demo origin now returns a route plan using the published demo fire
+polygons and a synthetic outer bypass. This supersedes the routing limitation
+above. Replay T0 still returns 422 because all fictional shelters are inside
+the current fire. See [the API guide](backend/api/README.md) for a working
+request and agent error handling. `/chat` remains a frontend-owned 501 stub.

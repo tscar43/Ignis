@@ -52,9 +52,20 @@ It uses the same fire service as /fire and reports cache metadata in headers.
 
 The road/shelter fixtures under backend/routing/demo are **synthetic** and are
 separate from Justin's protected demo_data. They exercise routing and scoring;
-they are not a real evacuation network. The origin 39.76, -121.62 currently has
-no eligible reachable shelter under the team's demo fire polygons and returns
-422. Do not interpret that as a real-world absence of evacuation options.
+they are not a real evacuation network. The default origin 39.76, -121.62 has
+a reachable shelter in demo mode via the outer bypass around the published
+current-fire polygons. Replay T0 still returns 422: the original road network
+is blocked and all four fictional shelters are inside the current fire.
+Do not interpret that as a real-world absence of evacuation options.
+
+Agent smoke test (no keys or network required):
+
+```powershell
+Invoke-RestMethod http://localhost:8000/plan -Method Post -ContentType 'application/json' -Body '{"origin":{"lat":39.76,"lon":-121.62},"mode":"demo"}'
+```
+
+Treat a 422 response as an unavailable plan and show its `detail`; never invent
+a route. `/chat` remains a 501 stub for the frontend agent to implement.
 
 Unit tests inject separate synthetic hazards to verify a 4-minute direct route
 versus a 9-minute lower-exposure bypass. Generate only these backend-owned
@@ -87,7 +98,9 @@ GET /shelters filters static fictional shelter data. POST /geocode recognizes
 
 Tests cover payload equality, all replay frames, TTL, invalid/failed refreshes,
 retry throttling, concurrent fetches, additive fields, CORS, route selection,
-current-fire blocking and shelter constraints. All tests run offline.
+current-fire blocking and shelter constraints. End-to-end routing tests also use
+the published demo/replay payloads without substituting synthetic hazards.
+All tests run offline.
 
 Next: prepare a real cached OSM road graph and approved shelter catalogue outside
 protected demo_data, then validate end-to-end route coverage and calibrate costs.

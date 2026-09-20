@@ -41,6 +41,10 @@
       <data key="d2">-121.58</data>
       <data key="d3">39.8</data>
     </node>
+    <node id="outer_southeast">
+      <data key="d2">-121.56</data>
+      <data key="d3">39.74</data>
+    </node>
     <edge source="origin" target="direct" id="0">
       <data key="d4">1713.8412906853619</data>
       <data key="d5">120</data>
@@ -113,6 +117,12 @@
       <data key="d6">Demo East Road</data>
       <data key="d7">LINESTRING (-121.58 39.74, -121.58 39.76)</data>
     </edge>
+    <edge source="southeast" target="outer_southeast" id="0">
+      <data key="d4">1714.3369418865045</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Outer Bypass</data>
+      <data key="d7">LINESTRING (-121.58 39.74, -121.56 39.74)</data>
+    </edge>
     <edge source="north" target="east" id="0">
       <data key="d4">2220.6043185605954</data>
       <data key="d5">180</data>
@@ -131,11 +141,29 @@
       <data key="d6">Demo Extension</data>
       <data key="d7">LINESTRING (-121.56 39.76, -121.58 39.76)</data>
     </edge>
+    <edge source="far_east" target="outer_southeast" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Outer Bypass</data>
+      <data key="d7">LINESTRING (-121.56 39.76, -121.56 39.74)</data>
+    </edge>
     <edge source="far_north" target="north" id="0">
       <data key="d4">2220.611994347977</data>
       <data key="d5">180</data>
       <data key="d6">Demo North Road</data>
       <data key="d7">LINESTRING (-121.58 39.8, -121.58 39.78)</data>
+    </edge>
+    <edge source="outer_southeast" target="southeast" id="0">
+      <data key="d4">1714.3369418865045</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Outer Bypass</data>
+      <data key="d7">LINESTRING (-121.56 39.74, -121.58 39.74)</data>
+    </edge>
+    <edge source="outer_southeast" target="far_east" id="0">
+      <data key="d4">2220.5966438066275</data>
+      <data key="d5">180</data>
+      <data key="d6">Demo Outer Bypass</data>
+      <data key="d7">LINESTRING (-121.56 39.74, -121.56 39.76)</data>
     </edge>
     <data key="d0">epsg:4326</data>
     <data key="d1">synthetic demonstration</data>

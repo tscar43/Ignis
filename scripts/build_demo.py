@@ -15,7 +15,8 @@ def build():
     nodes = {'origin': (-121.62, 39.76), 'direct': (-121.60, 39.76),
              'east': (-121.58, 39.76), 'southwest': (-121.62, 39.74),
              'southeast': (-121.58, 39.74), 'north': (-121.58, 39.78),
-             'far_east': (-121.56, 39.76), 'far_north': (-121.58, 39.80)}
+             'far_east': (-121.56, 39.76), 'far_north': (-121.58, 39.80),
+             'outer_southeast': (-121.56, 39.74)}
     for key, (lon, lat) in nodes.items():
         graph.add_node(key, x=lon, y=lat)
     geod = Geod(ellps='WGS84')
@@ -23,7 +24,9 @@ def build():
         ('direct', 'east', 2, 'Demo Central Road'), ('origin', 'southwest', 3, 'Demo South Road'),
         ('southwest', 'southeast', 3, 'Demo Bypass'), ('southeast', 'east', 3, 'Demo East Road'),
         ('east', 'north', 3, 'Demo North Road'), ('east', 'far_east', 3, 'Demo Extension'),
-        ('north', 'far_north', 3, 'Demo North Road')]:
+        ('north', 'far_north', 3, 'Demo North Road'),
+        ('southeast', 'outer_southeast', 3, 'Demo Outer Bypass'),
+        ('outer_southeast', 'far_east', 3, 'Demo Outer Bypass')]:
         length = abs(geod.inv(*nodes[u], *nodes[v])[2])
         for a, b in [(u, v), (v, u)]:
             graph.add_edge(a, b, length=length, travel_time=minutes * 60,
