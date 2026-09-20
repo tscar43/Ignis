@@ -10,7 +10,7 @@ as well as in `test_spread.py`. The two parsing traps in the module's comments
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -72,14 +72,7 @@ def test_peak_window_near_midnight_does_not_wrap_to_the_end_of_the_day(archive):
     assert wind.observed_at.startswith("2018-11-08T")
 
 
-def test_live_keeps_the_start_of_the_validTime_interval(monkeypatch):
-    grid = {"properties": {
-        # A non-UTC offset, which is how NWS actually serves these.
-        "windSpeed": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
-                                  "value": 35.04}]},
-        "windDirection": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
-                                      "value": 45.0}]},
-    }}
+def _fake_grid(monkeypatch, grid):
     point = {"properties": {"forecastGridData": "https://api.weather.gov/gridpoints/x"}}
 
     class FakeClient:
@@ -89,7 +82,76 @@ def test_live_keeps_the_start_of_the_validTime_interval(monkeypatch):
             return SimpleNamespace(json=lambda: point if "/points/" in url else grid)
 
     monkeypatch.setattr(nws.httpx, "Client", lambda **kw: FakeClient())
-    wind = nws.live(39.76, -121.62)
+
+
+def test_gridpoint_keeps_the_start_of_the_validTime_interval(monkeypatch):
+    _fake_grid(monkeypatch, {"properties": {
+        # A non-UTC offset, which is how NWS actually serves these.
+        "windSpeed": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
+                                  "value": 35.04}]},
+        "windDirection": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
+                                      "value": 45.0}]},
+    }})
+    wind = nws.nws_gridpoint(39.76, -121.62)
     assert wind.observed_at == "2018-11-08T19:50:00Z"
     assert wind.speed_kmh == 35.0
     assert wind.toward_deg == 225
+
+
+def test_gridpoint_reads_the_hour_covering_now_not_the_first_in_the_series(monkeypatch):
+    """values[0] is the start of the issuance, not the current hour.
+
+    A live run read 13:00Z wind at 20:03Z this way and shipped it as
+    data_as_of.weather. Speed and direction break at different times, so each
+    series has to be selected on its own -- taking index 0 of both was one bug
+    that looked like two.
+    """
+    now = datetime.now(timezone.utc)
+
+    def span(hours_ago, value):
+        stamp = (now - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        return {"validTime": f"{stamp}/PT1H", "value": value}
+
+    _fake_grid(monkeypatch, {"properties": {
+        "windSpeed": {"values": [span(7, 5.0), span(1, 40.0), span(-3, 99.0)]},
+        "windDirection": {"values": [span(9, 0.0), span(2, 45.0), span(-5, 270.0)]},
+    }})
+    wind = nws.nws_gridpoint(39.76, -121.62)
+    assert wind.speed_kmh == 40.0    # not 5.0, the stale first entry
+    assert wind.toward_deg == 225    # from 45, and off its own breakpoint
+    assert wind.observed_at == (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_gridpoint_falls_back_to_the_first_entry_when_the_series_is_all_future(monkeypatch):
+    ahead = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime(
+        "%Y-%m-%dT%H:%M:%S+00:00")
+    _fake_grid(monkeypatch, {"properties": {
+        "windSpeed": {"values": [{"validTime": f"{ahead}/PT1H", "value": 12.0}]},
+        "windDirection": {"values": [{"validTime": f"{ahead}/PT1H", "value": 180.0}]},
+    }})
+    assert nws.nws_gridpoint(39.76, -121.62).speed_kmh == 12.0
+
+
+def test_hrrr_flips_to_toward_and_stamps_the_hour(monkeypatch):
+    monkeypatch.setattr(nws.httpx, "get", lambda *a, **kw: SimpleNamespace(
+        json=lambda: {"current": {"time": "2026-09-19T20:00",
+                                  "wind_speed_10m": 11.23,
+                                  "wind_direction_10m": 266.0}}))
+    wind = nws.hrrr(37.62, -119.60)
+    assert wind.speed_kmh == 11.2
+    assert wind.toward_deg == 86  # from 266, so toward 86
+    assert wind.observed_at == "2026-09-19T20:00:00Z"
+
+
+def test_live_falls_back_to_the_gridpoint_when_hrrr_is_unreachable(monkeypatch):
+    def boom(*a, **kw):
+        raise nws.httpx.ConnectError("open-meteo down")
+
+    monkeypatch.setattr(nws.httpx, "get", boom)
+    _fake_grid(monkeypatch, {"properties": {
+        "windSpeed": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
+                                  "value": 35.04}]},
+        "windDirection": {"values": [{"validTime": "2018-11-08T11:50:00-08:00/PT1H",
+                                      "value": 45.0}]},
+    }})
+    assert nws.live(39.76, -121.62).speed_kmh == 35.0

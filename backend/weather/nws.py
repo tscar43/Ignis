@@ -1,4 +1,4 @@
-"""Wind for the spread model. NWS for live, Open-Meteo's archive for replay.
+"""Wind for the spread model. HRRR for live, Open-Meteo's archive for replay.
 The one thing to get right: both sources report the direction wind comes
 FROM. Fire spreads TOWARD (from + 180) % 360. Every value leaving this module
 is already flipped, so nothing downstream should flip it again.
@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import httpx
 NWS = "https://api.weather.gov"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
+FORECAST = "https://api.open-meteo.com/v1/forecast"
 # NWS asks for a contact in the User-Agent and throttles anonymous callers.
 HEADERS = {"User-Agent": "Ignis wildfire evacuation demo (github.com/tscar43/Ignis)"}
 @dataclass(frozen=True)
@@ -33,13 +34,51 @@ def _archive_day(lat: float, lon: float, day: str) -> dict:
         "latitude": lat, "longitude": lon, "start_date": day, "end_date": day,
         "hourly": "wind_speed_10m,wind_direction_10m", "timezone": "UTC",
     }).json()["hourly"]
+def hrrr(lat: float, lon: float) -> Wind:
+    """Current wind from NCEP HRRR at 3 km, via Open-Meteo. No key, no GRIB.
+    Preferred over the NWS gridpoint for fire. HRRR resolves the terrain-driven
+    flow that a 25 km reanalysis smooths away -- the problem `archived`'s peak
+    window exists to work around -- and `current` is the model's present hour,
+    not the first slot of a forecast series that may start hours back.
+    """
+    now = httpx.get(FORECAST, timeout=60, params={
+        "latitude": lat, "longitude": lon, "models": "gfs_hrrr",
+        "current": "wind_speed_10m,wind_direction_10m",
+        "wind_speed_unit": "kmh", "timezone": "UTC",
+    }).json()["current"]
+    return Wind(
+        speed_kmh=round(now["wind_speed_10m"], 1),
+        toward_deg=_toward(now["wind_direction_10m"]),
+        observed_at=now["time"] + ":00Z",
+    )
+def _covering(values: list[dict]) -> dict:
+    """The entry whose validTime interval covers now, not the first one.
+    An NWS gridpoint series starts at the last issuance boundary rather than
+    at the current hour, so `values[0]` can be badly stale -- it read 7 h old
+    on a live run, and the payload labels it `data_as_of.weather` as though it
+    were an observation. Speed and direction have different breakpoints, so
+    each series has to be selected on its own.
+    """
+    now = datetime.now(timezone.utc)
+    current = [v for v in values
+               if datetime.fromisoformat(v["validTime"].split("/")[0]) <= now]
+    return current[-1] if current else values[0]
 def live(lat: float, lon: float) -> Wind:
-    """Current NWS gridpoint wind. Two hops: /points then the gridpoint URL."""
+    """Current wind: HRRR at 3 km, falling back to the NWS gridpoint.
+    The fallback is not speculative -- this feeds an evacuation map, and one
+    unreachable weather host should not take the whole payload down.
+    """
+    try:
+        return hrrr(lat, lon)
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return nws_gridpoint(lat, lon)
+def nws_gridpoint(lat: float, lon: float) -> Wind:
+    """NWS gridpoint wind. Two hops: /points then the gridpoint URL."""
     with httpx.Client(headers=HEADERS, timeout=60) as client:
         point = client.get(f"{NWS}/points/{lat},{lon}").json()
         grid = client.get(point["properties"]["forecastGridData"]).json()["properties"]
-    speed = grid["windSpeed"]["values"][0]
-    direction = grid["windDirection"]["values"][0]
+    speed = _covering(grid["windSpeed"]["values"])
+    direction = _covering(grid["windDirection"]["values"])
     # validTime is an interval, "2026-09-19T12:00:00+00:00/PT3H"; keep the start.
     stamp = speed["validTime"].split("/")[0]
     return Wind(
@@ -72,7 +111,8 @@ def archived(lat: float, lon: float, when: datetime, peak_window_h: int = 0) -> 
     )
 if __name__ == "__main__":
     here = (39.76, -121.62)
-    print("live:", live(*here))
+    print("live (hrrr):", live(*here))
+    print("nws gridpoint:", nws_gridpoint(*here))
     camp = datetime(2018, 11, 8, 19, 50, tzinfo=timezone.utc)
     print("replay, exact hour:", archived(*here, camp))
     print("replay, peak +/-8h:", archived(*here, camp, peak_window_h=8))

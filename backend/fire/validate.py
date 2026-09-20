@@ -121,17 +121,20 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
     }
 
 
-def _predict(setup: dict, use_fuel: bool, use_slope: bool, r0: float) -> np.ndarray:
+def _predict(setup: dict, use_fuel: bool, use_slope: bool, r0: float,
+             step_factors: list[float] | None = None) -> np.ndarray:
     arrival = arrival_times(
         setup["ignition"], setup["wind"].speed_kmh, setup["wind"].toward_deg,
         cell_m=setup["transform"].a,
         propensity=setup["fuel"] if use_fuel else None,
-        slope=setup["slope"] if use_slope else None, r0=r0)
+        slope=setup["slope"] if use_slope else None, r0=r0,
+        step_factors=step_factors)
     return arrival <= BANDS[setup["band"]]
 
 
 def calibrate(setup: dict, use_fuel: bool, use_slope: bool,
-              target_km2: float, bounds=(0.5, 300.0), steps: int = 14) -> float:
+              target_km2: float, bounds=(0.5, 300.0), steps: int = 14,
+              step_factors: list[float] | None = None) -> float:
     """R0 that makes this configuration burn `target_km2`, by bisection.
 
     Without this the ablation is meaningless: sharing one R0 across variants
@@ -141,7 +144,8 @@ def calibrate(setup: dict, use_fuel: bool, use_slope: bool,
     lo, hi = bounds
     for _ in range(steps):
         mid = (lo + hi) / 2
-        area = _predict(setup, use_fuel, use_slope, mid).sum() * setup["cell_km2"]
+        area = _predict(setup, use_fuel, use_slope, mid,
+                        step_factors).sum() * setup["cell_km2"]
         lo, hi = (mid, hi) if area < target_km2 else (lo, mid)
     return round((lo + hi) / 2, 2)
 

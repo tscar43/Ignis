@@ -296,5 +296,5 @@ if __name__ == "__main__":
 
     if "--write" in sys.argv:
         out = Path(__file__).resolve().parents[2] / "demo_data" / "risk_magi.json"
-        out.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         print(f"\nwrote {out} ({out.stat().st_size / 1024:.0f} KB)")

@@ -12,13 +12,15 @@ directories not to touch.
 | | |
 |---|---|
 | `backend/fire/` | the spread engine — start at [backend/fire/README.md](backend/fire/README.md) |
-| `backend/weather/` | wind: NWS live, Open-Meteo reanalysis for replay |
+| `backend/weather/` | wind: HRRR live, Open-Meteo reanalysis for replay |
 | `demo_data/` | shipped payloads and the consumer-facing contract prose |
 | `contracts/` | shared, still empty — `backend/fire/contract.py` is the proposed content |
 
 The fire engine is **done and merged**: nine milestones, runs live or in replay
-against real FIRMS, LANDFIRE and ERA5 data, not fixtures. 53 tests, all
-offline. Everything it ships is validated against the contract on the way out.
+against real FIRMS, GOES, LANDFIRE, HRRR and ERA5 data, not fixtures. 105
+tests, all offline. Everything it ships is validated against the contract on
+the way out, and scored against the 2025 Palisades Fire in
+[demo_data/palisades_comparison.png](demo_data/palisades_comparison.png).
 
 Not built yet: the HTTP endpoint, the backend API, the frontend. The endpoint
 is deliberately unclaimed — see [AGENTS.md](AGENTS.md).
