@@ -137,9 +137,9 @@ current-fire blocking and shelter constraints. End-to-end routing tests also use
 the published demo/replay payloads without substituting synthetic hazards.
 All tests run offline.
 
-Next: supply an approved shelter catalogue and validate its access routes and
-coverage. The frontend agent can already consume `/plan`; real-road routing
-needs no fire-model or response-schema changes.
+Remaining handoff: the frontend owns the AI agent and map/banner rendering.
+Live use still needs fresh evacuation input and verified eligible shelter access.
+The route-array changes above must be reflected in the frontend.
 
 ## Local FEMA shelter preview
 
@@ -210,3 +210,25 @@ are stale. Live planning returns 503 without fresh matching evacuation input
 or when the fire cache is stale. Supplied coverage must contain the complete
 route and access connectors. Invalid configured files return 503. Historical
 Palisades assets are served separately and never treated as fresh live orders.
+
+## Deployment readiness
+
+`GET /health` checks process liveness. `GET /ready` loads and validates the local
+Paradise/Palisades demo inputs and road caches; it returns 503 if a required
+asset is missing or malformed. This does not claim that live feeds, current
+shelters or evacuation orders are available. Loaded immutable demo/road assets
+are cached until restart.
+
+Set the comma-separated `IGNIS_CORS_ORIGINS` in the server environment to allow
+the deployed frontend origin. Defaults remain localhost ports 5173 and 3000.
+For PowerShell, before starting Uvicorn:
+
+```powershell
+$env:IGNIS_CORS_ORIGINS = 'https://your-frontend.example,http://localhost:5173'
+```
+
+Writing a setting into `.env` alone does not load it into this API's environment.
+Use your hosting platform's environment settings or export it before startup.
+Malformed/missing road or Palisades assets return 503; invalid request coordinates
+and requests with no eligible route return 422. `/chat` is still the
+frontend-owned integration stub, and general-purpose geocoding is not implemented.

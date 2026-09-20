@@ -1,23 +1,48 @@
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .api.evacuations import EvacuationsUnavailable, read_evacuations, origin_orders
-from .api.palisades_demo import PalisadesDemoRequest, PalisadesPlanResponse, demo_info, plan_demo
+from .api.palisades_demo import (DemoUnavailable, PalisadesDemoRequest, PalisadesPlanResponse,
+                                  ROUTING, demo_info, plan_demo)
 from .api.fire_service import FireUnavailable, get_fire_result
 from .models import (ChatRequest, GeocodeRequest, Household, Origin,
                      PlanRequest, PlanResponse, ReplayTime, Shelter)
 from .routing.routes import calculate_routes
 from .shelters.shelters import find_shelters
 from .shelters.fema import ShelterUnavailable, access_report, read_catalogue
-from .routing.roads import load_graph
+from .routing.roads import RoadUnavailable, load_graph, read_graph
 
 app = FastAPI(title='Ignis API', version='0.3.0')
 app.add_middleware(CORSMiddleware,
-    allow_origins=['http://localhost:5173', 'http://localhost:3000'],
+    allow_origins=[origin.strip() for origin in os.environ.get(
+        'IGNIS_CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000').split(',')
+        if origin.strip()],
     allow_methods=['GET', 'POST'], allow_headers=['*'],
     expose_headers=['X-Fire-Source', 'X-Fire-Stale', 'X-Fire-Cache-Age'])
+
+
+@app.exception_handler(RoadUnavailable)
+@app.exception_handler(DemoUnavailable)
+async def unavailable_dataset(request, exc):
+    return JSONResponse(status_code=503, content={'detail': str(exc)})
+
+
+@app.get('/ready')
+def ready():
+    """Validate bundled demo inputs without calling live upstream services."""
+    try:
+        get_fire_result('demo', 'T0')
+        load_graph()
+        find_shelters()
+        demo_info()
+        read_graph(ROUTING / 'osm/palisades.graphml')
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(503, 'Demo data missing or invalid') from exc
+    return {'status': 'ready', 'scope': 'offline_demos'}
 
 
 @app.get('/health')

@@ -44,27 +44,35 @@ class PalisadesPlanResponse(PlanResponse):
     banner: DemoBanner
 
 
+class DemoUnavailable(RuntimeError):
+    pass
+
+
 @lru_cache(maxsize=1)
 def assets():
-    raw = json.loads((ROUTING / 'demo/palisades_evacuation_raw.geojson').read_text(encoding='utf-8'))
-    metadata = raw['metadata']
-    features = []
-    for feature in raw['features']:
-        geometry = ZoneGeometry.model_validate(feature['geometry']).model_dump()
-        props = feature['properties']
-        features.append({'type': 'Feature', 'geometry': geometry, 'properties': {
-            'id': str(props['OBJECTID']),
-            'zone': props['ZONE_NAME'] or f"Archived area {props['OBJECTID']}",
-            'level': {'Evacuation Order': 'order', 'Evacuation Warning': 'warning'}[props['STATUS']],
-            'authority': metadata['authority'], 'source_url': metadata['source_url'],
-            'archived_at': metadata['archived_at'], 'instructions': props['NOTES'],
-        }})
-    snapshot = {'type': 'FeatureCollection', 'mode': 'demo',
-                'source_url': metadata['source_url'], 'authority': metadata['authority'],
-                'archived_at': metadata['archived_at'],
-                'coverage': mapping(box(*metadata['query_bbox'])), 'features': features}
-    fire = checked(json.loads((ROUTING / 'demo/palisades_fire.json').read_text(encoding='utf-8')))
-    return snapshot, fire
+    try:
+        raw = json.loads((ROUTING / 'demo/palisades_evacuation_raw.geojson').read_text(encoding='utf-8'))
+        metadata = raw['metadata']
+        features = []
+        for feature in raw['features']:
+            geometry = ZoneGeometry.model_validate(feature['geometry']).model_dump()
+            props = feature['properties']
+            features.append({'type': 'Feature', 'geometry': geometry, 'properties': {
+                'id': str(props['OBJECTID']),
+                'zone': props['ZONE_NAME'] or f"Archived area {props['OBJECTID']}",
+                'level': {'Evacuation Order': 'order', 'Evacuation Warning': 'warning'}[props['STATUS']],
+                'authority': metadata['authority'], 'source_url': metadata['source_url'],
+                'archived_at': metadata['archived_at'], 'instructions': props['NOTES'],
+            }})
+        snapshot = {'type': 'FeatureCollection', 'mode': 'demo',
+                    'source_url': metadata['source_url'], 'authority': metadata['authority'],
+                    'archived_at': metadata['archived_at'],
+                    'coverage': mapping(box(*metadata['query_bbox'])), 'features': features}
+        fire = checked(json.loads((ROUTING / 'demo/palisades_fire.json').read_text(encoding='utf-8')))
+        return snapshot, fire
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise DemoUnavailable('Palisades demo assets missing or invalid') from exc
+
 
 
 def banner(enabled):
