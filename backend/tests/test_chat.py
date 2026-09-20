@@ -91,7 +91,8 @@ def test_a_successful_plan_is_returned_for_the_map(stub):
     answer = chat.reply(ChatRequest(messages=[{'role': 'user', 'content': 'help'}]), planner)
 
     assert answer['plan'] is not None
-    assert json.loads(_Plan().model_dump_json())['routes'] == []
+    # Route geometry is kept out of the model's context, not out of the map's.
+    assert _Plan.excluded == {'routes': {'__all__': {'geometry'}}}
     # The household reached the routing layer as the model described it.
     assert planned[0].household.occupants == 2
     assert planned[0].origin.lat == 39.76
@@ -119,7 +120,14 @@ def test_chat_is_503_when_the_server_has_no_credentials(monkeypatch):
 
 
 class _Plan:
-    """Stands in for a PlanResponse; only the JSON dump is used."""
+    """Stands in for a PlanResponse. Records the exclude the tool asks for.
 
-    def model_dump_json(self):
-        return json.dumps({'routes': [], 'warnings': ['demo']})
+    The geometry exclusion is the whole point of the summary: a route polyline
+    is most of the payload and none of it is readable by the model.
+    """
+    excluded = None
+
+    def model_dump(self, exclude=None):
+        type(self).excluded = exclude
+        return {'routes': [{'type': 'recommended', 'travel_time_min': 5.1}],
+                'warnings': ['demo']}

@@ -18,8 +18,15 @@ from ..models import Household, Origin, PlanRequest
 MODEL = 'claude-opus-5'
 # A household waiting to evacuate is not the place for a long think. Routing,
 # hazards and orders are all decided deterministically before the model sees
-# them; its job is to explain the result, which medium effort does well.
-EFFORT = 'medium'
+# them; its job is to explain the result, which low effort does well and fast.
+EFFORT = 'low'
+# An answer to a frightened person should be a few sentences. 1000 tokens is
+# roughly three times the longest useful reply, so it caps runaway cost without
+# ever truncating a real one.
+MAX_TOKENS = 1000
+# Resent in full every turn, so this bounds the worst case rather than the
+# typical one -- a demo conversation is five or six turns.
+HISTORY = 20
 
 SYSTEM = """You are the evacuation assistant for Ignis, an experimental wildfire
 decision-support demo. You are talking to a household that may be deciding
@@ -82,6 +89,8 @@ def conversation(messages):
         if len(content) > 4000:
             raise HTTPException(422, 'Message is too long; keep it under 4000 characters')
         clean.append({'role': role, 'content': content})
+    # Oldest turns drop first; the last one must still be the user's.
+    clean = clean[-HISTORY:]
     if not clean or clean[0]['role'] != 'user' or clean[-1]['role'] != 'user':
         raise HTTPException(422, 'The conversation must start and end with a user message')
     return clean
@@ -134,11 +143,17 @@ def reply(request, planner):
             return json.dumps({'error': exc.detail, 'status': exc.status_code,
                                'routes': []})
         plans.append(plan)
-        return plan.model_dump_json()
+        # The model is given the plan without route geometry. 185 coordinate
+        # pairs is ~77% of the payload and none of it is readable -- it cannot
+        # say anything about a polyline that `named_roads` does not already
+        # say, and every token of it is resent on each later turn. The full
+        # geometry still goes to the caller for the map to draw.
+        summary = plan.model_dump(exclude={'routes': {'__all__': {'geometry'}}})
+        return json.dumps(summary, default=str)
 
     try:
         message = client.beta.messages.tool_runner(
-            model=MODEL, max_tokens=16000, system=SYSTEM,
+            model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM,
             output_config={'effort': EFFORT},
             tools=[plan_evacuation], messages=conversation(request.messages),
         ).until_done()
