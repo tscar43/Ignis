@@ -10,10 +10,10 @@ RISK_LAMBDA = 4.0
 
 
 def score_graph(graph, fire):
-    """Copy graph, block current fire, score each edge's most severe band.
+    """Copy graph, block current fire, score each segment's most severe band.
 
     Use an edge spatial index, and a local metric projection for intersections.
-    Only intersection length in the selected band is counted (no cumulative overlap).
+    Subtract higher-risk regions so cumulative bands never double-count distance.
     """
     scored = graph.copy()
     first = next(iter(graph.nodes.values()))
@@ -23,7 +23,7 @@ def score_graph(graph, fire):
     edges = list(graph.edges(keys=True, data=True))
     geometries = [transform(project, e['geometry']) for _, _, _, e in edges]
     index = STRtree(geometries)
-    assigned = set()
+    covered = unary_union([])
     for _, _, _, edge in scored.edges(keys=True, data=True):
         edge['exposure_km'] = dict.fromkeys(BANDS, 0.0)
         edge['risk_cost'] = edge['travel_time'] / 60
@@ -32,15 +32,17 @@ def score_graph(graph, fire):
                                for f in fire['risk_polygons'][band]['features']])
         for raw_index in index.query(polygon, predicate='intersects'):
             i = int(raw_index)
-            if i in assigned:
-                continue
-            assigned.add(i)
             u, v, key, _ = edges[i]
+            if not scored.has_edge(u, v, key):
+                continue
             if band == 'current':
                 scored.remove_edge(u, v, key)
                 continue
             edge = scored[u][v][key]
-            km = min(edge['length'] / 1000, geometries[i].intersection(polygon).length / 1000)
+            length = geometries[i].intersection(polygon).difference(covered).length
+            remaining = max(0, edge['length'] / 1000 - sum(edge['exposure_km'].values()))
+            km = min(remaining, length / 1000)
             edge['exposure_km'][band] = km
             edge['risk_cost'] += RISK_LAMBDA * WEIGHTS[band] * km
+        covered = covered.union(polygon)
     return scored

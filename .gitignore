@@ -49,3 +49,9 @@ htmlcov/
 !backend/routing/demo/graph.graphml
 cache/
 .playwright-mcp/
+
+# Reviewed OSM cache for the default Paradise routing area
+!backend/routing/osm/paradise.graphml
+
+# Offline Palisades evacuation comparison (under 10 MB)
+!backend/routing/osm/palisades.graphml

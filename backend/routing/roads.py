@@ -1,35 +1,53 @@
 from functools import lru_cache
 from pathlib import Path
 import os
+from xml.etree.ElementTree import ParseError
 
 import networkx as nx
 from pyproj import Geod
+from shapely.errors import GEOSException
 from shapely import wkt
 from shapely.geometry import LineString
 
 DATA_DIR = Path(__file__).resolve().parent / 'demo'
+OSM_PATH = Path(__file__).resolve().parent / 'osm' / 'paradise.graphml'
 GEOD = Geod(ellps='WGS84')
+
+
+class RoadUnavailable(RuntimeError):
+    pass
 
 
 @lru_cache(maxsize=1)
 def load_graph():
     """Read only a local GraphML cache; never fetch roads in a request."""
-    path = Path(os.environ.get('IGNIS_GRAPH_PATH', DATA_DIR / 'graph.graphml'))
-    graph = nx.read_graphml(path, force_multigraph=True)
-    if not graph.is_directed():
-        raise ValueError('Road graph must be directed')
-    for _, node in graph.nodes(data=True):
-        node['x'], node['y'] = float(node['x']), float(node['y'])
-    for u, v, _, edge in graph.edges(keys=True, data=True):
-        edge['length'] = float(edge['length'])
-        edge['travel_time'] = float(edge['travel_time'])
-        edge['geometry'] = wkt.loads(edge['geometry']) if 'geometry' in edge else LineString([
-            (graph.nodes[u]['x'], graph.nodes[u]['y']),
-            (graph.nodes[v]['x'], graph.nodes[v]['y']),
-        ])
-        if edge['length'] <= 0 or edge['travel_time'] <= 0:
-            raise ValueError('Road lengths and travel times must be positive')
-    return graph
+    path = Path(os.environ.get('IGNIS_GRAPH_PATH', OSM_PATH))
+    return read_graph(path)
+
+
+@lru_cache(maxsize=4)
+def read_graph(path):
+    try:
+        graph = nx.read_graphml(path, force_multigraph=True)
+        if not graph.nodes or not graph.edges:
+            raise ValueError('Road graph must contain nodes and edges')
+        if not graph.is_directed():
+            raise ValueError('Road graph must be directed')
+        for _, node in graph.nodes(data=True):
+            node['x'], node['y'] = float(node['x']), float(node['y'])
+        for u, v, _, edge in graph.edges(keys=True, data=True):
+            edge['length'] = float(edge['length'])
+            edge['travel_time'] = float(edge['travel_time'])
+            edge['geometry'] = wkt.loads(edge['geometry']) if 'geometry' in edge else LineString([
+                (graph.nodes[u]['x'], graph.nodes[u]['y']),
+                (graph.nodes[v]['x'], graph.nodes[v]['y']),
+            ])
+            if edge['length'] <= 0 or edge['travel_time'] <= 0:
+                raise ValueError('Road lengths and travel times must be positive')
+        return graph
+    except (OSError, ValueError, KeyError, TypeError, ParseError, nx.NetworkXException, GEOSException) as exc:
+        raise RoadUnavailable('Road cache missing or invalid') from exc
+
 
 
 def nearest_node(graph, lat, lon, max_distance_m=1000):

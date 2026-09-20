@@ -163,7 +163,15 @@ def test_invalid_mode_time_combinations(url):
     assert client.get(url).status_code == 422
 
 
-def test_published_demo_cannot_invent_route_through_blocked_network():
+def test_published_demo_cannot_invent_route_through_blocked_network(monkeypatch):
+    from backend.routing.roads import DATA_DIR, load_graph
+
+    monkeypatch.setenv('IGNIS_GRAPH_PATH', str(DATA_DIR / 'graph.graphml'))
+    load_graph.cache_clear()
+    graph = load_graph().copy()
+    load_graph.cache_clear()
+    graph.remove_node('outer_southeast')
+    monkeypatch.setattr('backend.routing.routes.load_graph', lambda: graph)
     response = client.post('/plan', json={'origin': {'lat': 39.76, 'lon': -121.62}})
     assert response.status_code == 422
     assert 'No reachable shelter' in response.json()['detail']
