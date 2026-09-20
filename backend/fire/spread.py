@@ -10,6 +10,7 @@ in bands_to_geojson, at the very end.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,15 @@ from ..weather import nws
 from . import contract, firms, goes, landfire, terrain
 from .firms import DEMO_BBOX
 
+logger = logging.getLogger(__name__)
+
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
+
+# How far back of `seed_time` still counts as the same satellite pass. A VIIRS
+# granule is 6 minutes and a bbox this size falls inside one, but the swath is
+# stamped per detection, so the minutes spread. 10 keeps one pass together
+# without reaching the previous overpass, which is hours away.
+PASS_WINDOW_MIN = 10
 
 # 8-neighbourhood: (drow, dcol). Compass bearing of each step is derived from
 # it, so the wind term and the step length stay in sync.
@@ -55,12 +64,17 @@ WIND_EXPONENT = 3.0
 R0_M_PER_MIN = 10.0
 
 
-def _step_propensity(wind_kmh: float, wind_toward_deg: float) -> list[float]:
+def _step_propensity(wind_kmh: float, wind_toward_deg: float,
+                     convergence_deg: float = 0.0) -> list[float]:
     """Wind factor per neighbour direction. Position-independent, so 8 numbers.
 
     Row index grows southward, so north is -drow. The bearing of a step is
-    atan2(east, north) in compass degrees.
+    atan2(east, north) in *grid* degrees, which is not a compass bearing:
+    EPSG:5070's north and true north differ by the meridian convergence.
+    `convergence_deg` brings the weather feed's true bearing into that frame --
+    see `terrain.grid_convergence`.
     """
+    wind_toward_deg -= convergence_deg
     factors = []
     for drow, dcol in NEIGHBOURS:
         bearing = math.degrees(math.atan2(dcol, -drow)) % 360
@@ -79,6 +93,7 @@ def arrival_times(
     horizon_min: float = max(BANDS.values()),
     r0: float = R0_M_PER_MIN,
     step_factors: list[float] | None = None,
+    convergence_deg: float = 0.0,
 ) -> np.ndarray:
     """Minutes until fire reaches each cell. Unreached cells come back inf.
 
@@ -90,11 +105,16 @@ def arrival_times(
     `step_factors` replaces this module's wind shape with one supplied per
     NEIGHBOURS direction, which is how `elliptical.py` runs the FARSITE-class
     baseline through the same solver. None keeps the cos^3 form.
+
+    `convergence_deg` is the grid-vs-true north offset for this raster; it only
+    reaches the built-in wind shape, because a caller supplying `step_factors`
+    has already built them in the grid frame. 0 is right for a synthetic grid
+    and wrong for a real one -- `Scene.convergence` has the real value.
     """
     if propensity is None:
         propensity = np.ones(ignition.shape, dtype="float32")
     rows, cols = ignition.shape
-    wind = (_step_propensity(wind_kmh, wind_toward_deg)
+    wind = (_step_propensity(wind_kmh, wind_toward_deg, convergence_deg)
             if step_factors is None else step_factors)
     lengths = [cell_m * math.hypot(dr, dc) for dr, dc in NEIGHBOURS]
 
@@ -242,10 +262,19 @@ class Scene:
     wind: nws.Wind
     seed: list
     seed_time: datetime
+    # Which inputs were missing, e.g. ("goes_unavailable",). Deliberately not
+    # in the JSON payload: `contracts/` is shared and needs all three of us to
+    # agree before a new key appears in it.
+    degraded: tuple[str, ...] = ()
 
     @property
     def cell_m(self) -> float:
         return self.transform.a
+
+    @property
+    def convergence(self) -> float:
+        """Grid-vs-true north for this raster; see `terrain.grid_convergence`."""
+        return terrain.grid_convergence(self.transform, self.propensity.shape)
 
 
 def gather(bbox=DEMO_BBOX, when: datetime | None = None,
@@ -278,10 +307,15 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     # would have known at that moment -- often hours stale, which is the point.
     available = [h.acq_time for h in hotspots
                  if live_mode or h.acq_time <= when]
-    if not available:
-        raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
-    seed_time = max(available)
-    seed = [h for h in hotspots if h.acq_time == seed_time]
+    seed, seed_time, degraded = [], None, []
+    if available:
+        seed_time = max(available)
+        # A pass is a time window, not a timestamp. FIRMS stamps each detection
+        # with its own acquisition minute, so one overpass of a bbox arrives as
+        # several adjacent minutes; matching `== seed_time` keeps the last
+        # minute of the pass and silently drops the rest of it.
+        seed = [h for h in hotspots
+                if 0 <= (seed_time - h.acq_time).total_seconds() <= PASS_WINDOW_MIN * 60]
 
     # Live only: add the newest GOES ABI frame, scanned minutes ago rather than
     # hours. Union rather than replace -- ABI sees only the hottest cores, so
@@ -293,11 +327,26 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     # from the origin. Arrival time is a minimum over paths, so a seed inside
     # the envelope contributes nothing; only the outer edge moves, and the ABI
     # frame is the one observation entitled to move it.
+    #
+    # Both failure directions are degraded answers rather than no answer: ABI
+    # alone still locates a fire VIIRS has not passed over yet, and an
+    # unreachable S3 bucket must not take down a payload VIIRS can already
+    # support. `degraded` records which, for the caller that wants to say so.
     if live_mode:
-        fresh = goes.fetch(bbox)
+        try:
+            fresh = goes.fetch(bbox)
+        except Exception:
+            fresh = []
+            degraded.append("goes_unavailable")
+            logger.warning("GOES ABI fetch failed; serving VIIRS alone", exc_info=True)
         if fresh:
             seed = seed + fresh
-            seed_time = max(seed_time, fresh[0].acq_time)
+            seed_time = max(seed_time or fresh[0].acq_time, fresh[0].acq_time)
+            if not available:
+                degraded.append("no_viirs_pass")
+
+    if not seed:
+        raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
 
     lat = (bbox[1] + bbox[3]) / 2
     lon = (bbox[0] + bbox[2]) / 2
@@ -308,14 +357,16 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
     if perimeter is not None:
         ignition |= seed_from_perimeter(perimeter, profile["transform"], codes.shape)
+    convergence = terrain.grid_convergence(profile["transform"], codes.shape)
     return Scene(
         ignition=ignition,
         codes=codes,
         propensity=landfire.fuel_factor(codes),
         slope=terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
                                    landfire.fetch("aspect", bbox=bbox)[0],
-                                   NEIGHBOURS),
-        transform=profile["transform"], wind=wind, seed=seed, seed_time=seed_time)
+                                   NEIGHBOURS, convergence_deg=convergence),
+        transform=profile["transform"], wind=wind, seed=seed, seed_time=seed_time,
+        degraded=tuple(degraded))
 
 
 def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
@@ -329,7 +380,9 @@ def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
         "risk_polygons": bands["risk_polygons"],
         "summary": {
             "wind_speed_kmh": scene.wind.speed_kmh,
-            "wind_toward_deg": round(scene.wind.toward_deg),
+            # % 360 after rounding, not before: round(359.6) is 360, which the
+            # contract rejects as a bearing. Both spread and MAGI land here.
+            "wind_toward_deg": round(scene.wind.toward_deg) % 360,
             "primary_spread_direction": scene.wind.compass,
             "dominant_fuels": landfire.dominant_fuels(burned),
             "area_km2": bands["area_km2"],
@@ -352,7 +405,8 @@ def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
         scene.ignition, scene.wind.speed_kmh, scene.wind.toward_deg,
         cell_m=scene.cell_m,
         propensity=scene.propensity if use_fuel else None,
-        slope=scene.slope if use_slope else None)
+        slope=scene.slope if use_slope else None,
+        convergence_deg=scene.convergence)
     # Fail here rather than shipping bad polygons to an evacuation UI. The
     # guard is on this path only, not in assemble(), so it cannot break the
     # ensemble while that is still being written.

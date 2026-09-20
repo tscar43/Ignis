@@ -1,12 +1,31 @@
 """IoU of predicted risk bands against what the fire actually did.
 
+!! THE NUMBERS BELOW ARE STALE. Three defects found in the 2026-09-20 audit
+!! change every score in this file: the truth mask stopped short of the
+!! validation pass across UTC midnight, a 12 h window was scored against a 6 h
+!! simulation, and grid north was compared against true north. All three are
+!! fixed in the code now. Nothing here has been rerun, because rerunning needs
+!! FIRMS and LANDFIRE. Re-fit and re-measure before quoting any of it; the
+!! prose is kept only because the *questions* it settles are still the ones to
+!! ask, not because the values still hold.
+
 Ground truth here is the union of FIRMS detections up to the validation time,
 rasterized exactly the way ignition seeds are. That is deliberate but limited:
 a detection is an *actively burning* pixel, so a cell that burned and cooled
-stops being reported. The observed footprint therefore understates burned
-area, and the absolute IoU is pessimistic. The ablation -- wind only vs
-+fuel vs +fuel+slope, all scored the same way -- is the honest comparison,
-because the bias cancels.
+stops being reported.
+
+That understatement is smaller than it sounds -- `observed()` accumulates
+every detection up to `upto`, so a cell that burned and cooled is still in the
+mask that saw it burn -- but it does not vanish: fire that never coincided with
+an overpass is missed outright, and the absolute IoU stays pessimistic.
+
+What does NOT follow is the claim this file used to make, that the bias
+cancels across the ablation. Every configuration being scored against the same
+imperfect mask makes the comparison *fair*; it does not make the ranking
+unbiased, because a mask built from 375 m detection pixels can systematically
+favour one footprint shape over another, and the configurations differ exactly
+in shape. Treat the ablation as a like-for-like comparison, not as evidence
+that the ordering is the true one.
 
 Each configuration is calibrated separately before scoring. Sharing one R0
 would make the ablation meaningless -- adding F_fuel only slows the model
@@ -110,6 +129,7 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
 
     lat, lon = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
     gap_min = (validate_at - seed_at).total_seconds() / 60
+    convergence = terrain.grid_convergence(transform, shape_)
     return {
         "ignition": seed_from_hotspots(seed, transform, shape_),
         "truth": observed(hotspots, validate_at, transform, shape_),
@@ -117,23 +137,32 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
         "fuel": landfire.fuel_factor(codes),
         "slope": terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
                                        landfire.fetch("aspect", bbox=bbox)[0],
-                                       NEIGHBOURS),
+                                       NEIGHBOURS, convergence_deg=convergence),
         "transform": transform,
+        "convergence": convergence,
         "cell_km2": (transform.a / 1000) ** 2,
         "gap_min": gap_min,
+        # What the model is actually asked to predict: the real elapsed time
+        # between the two passes. `band` is only the public h1/h3/h6 product
+        # band nearest that gap, kept for labelling -- scoring a 12 h window
+        # against the 6 h band was reporting half a simulation as a whole one.
+        "horizon_min": gap_min,
         "band": min(BANDS, key=lambda n: abs(BANDS[n] - gap_min) if BANDS[n] else 1e9),
     }
 
 
 def _predict(setup: dict, use_fuel: bool, use_slope: bool, r0: float,
              step_factors: list[float] | None = None) -> np.ndarray:
+    """Burned mask after the window's real elapsed time, not the nearest band."""
+    horizon = setup["horizon_min"]
     arrival = arrival_times(
         setup["ignition"], setup["wind"].speed_kmh, setup["wind"].toward_deg,
         cell_m=setup["transform"].a,
         propensity=setup["fuel"] if use_fuel else None,
         slope=setup["slope"] if use_slope else None, r0=r0,
-        step_factors=step_factors)
-    return arrival <= BANDS[setup["band"]]
+        horizon_min=horizon, step_factors=step_factors,
+        convergence_deg=setup["convergence"])
+    return arrival <= horizon
 
 
 def calibrate(setup: dict, use_fuel: bool, use_slope: bool,

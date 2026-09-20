@@ -62,8 +62,18 @@ BURNED, SEED, INK, MUTED = "#3d3d3a", "#b8b7b0", "#0b0b0b", "#52514e"
 SURFACE, RULE, GRID = "#fcfcfb", "#dededa", "#e8e8e4"
 
 
-def models(wind):
-    ellipse = elliptical.step_factors(wind.speed_kmh, wind.toward_deg)
+def models(wind, convergence_deg: float = 0.0):
+    """The three configurations, with the ellipse built for THIS window's wind.
+
+    Recomputed per window rather than once: Ignis reads its wind out of each
+    window's setup, so an ellipse frozen at the calibration window would be
+    answering a different question from the model it is being compared with,
+    and the "same seed, same wind, only the shape differs" claim would be
+    false. Only R0 is carried across windows, because that is the one thing
+    calibration is allowed to fix.
+    """
+    ellipse = elliptical.step_factors(wind.speed_kmh, wind.toward_deg,
+                                      convergence_deg)
     return {
         "Ignis": dict(use_fuel=True, use_slope=True, sf=None),
         "FARSITE-class": dict(use_fuel=True, use_slope=True, sf=ellipse),
@@ -76,7 +86,7 @@ def run(peak_window_h: int = 8) -> dict:
     """Fit on window 1, score on the rest. Predictions are kept for the figure."""
     setups = [validate._setup(s, v, BBOX, peak_window_h) for s, v in WINDOWS]
     fit = setups[0]
-    configured = models(fit["wind"])
+    configured = models(fit["wind"], fit["convergence"])
 
     r0 = {name: validate.calibrate(fit, cfg["use_fuel"], cfg["use_slope"],
                                    fit["truth"].sum() * fit["cell_km2"],
@@ -95,7 +105,7 @@ def run(peak_window_h: int = 8) -> dict:
             "observed_km2": round(setup["truth"].sum() * setup["cell_km2"], 1),
             "models": {}, "predictions": {}, "setup": setup,
         }
-        for name, cfg in configured.items():
+        for name, cfg in models(setup["wind"], setup["convergence"]).items():
             predicted = validate._predict(setup, cfg["use_fuel"], cfg["use_slope"],
                                           r0[name], cfg["sf"])
             window["models"][name] = {
