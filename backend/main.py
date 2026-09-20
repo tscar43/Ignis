@@ -3,6 +3,8 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.evacuations import EvacuationsUnavailable, read_evacuations, origin_orders
+from .api.palisades_demo import PalisadesDemoRequest, PalisadesPlanResponse, demo_info, plan_demo
 from .api.fire_service import FireUnavailable, get_fire_result
 from .models import (ChatRequest, GeocodeRequest, Household, Origin,
                      PlanRequest, PlanResponse, ReplayTime, Shelter)
@@ -77,9 +79,11 @@ def geocode(request: GeocodeRequest):
 @app.post('/plan', response_model=PlanResponse)
 def plan(request: PlanRequest, response: Response):
     payload = fire_for_time(request.mode, request.t, response)
+    if request.mode == 'live' and response.headers.get('X-Fire-Stale') == 'true':
+        raise HTTPException(503, 'Live routing requires fresh fire data')
     try:
         return calculate_routes(request, payload)
-    except ShelterUnavailable as exc:
+    except (ShelterUnavailable, EvacuationsUnavailable) as exc:
         raise HTTPException(503, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -94,3 +98,38 @@ def scenario(t: ReplayTime, response: Response):
 @app.post('/chat')
 def chat(request: ChatRequest):
     raise HTTPException(501, 'Frontend agent integration is not installed yet')
+
+
+@app.get('/evacuations')
+def evacuations(response: Response, mode: Literal['demo', 'replay', 'live'] = 'live',
+                lat: float | None = Query(default=None, ge=-90, le=90),
+                lon: float | None = Query(default=None, ge=-180, le=180)):
+    if (lat is None) != (lon is None):
+        raise HTTPException(422, 'Provide both lat and lon, or neither')
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        data = read_evacuations(mode)
+        return origin_orders(data, lon, lat) if lat is not None else data
+    except EvacuationsUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.get('/demo/palisades')
+def palisades_info(response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        return demo_info()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, 'Palisades demo assets unavailable') from exc
+
+
+@app.post('/demo/palisades/plan', response_model=PalisadesPlanResponse)
+def palisades_plan(request: PalisadesDemoRequest, response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Fire-Source'] = 'palisades-historical'
+    try:
+        return plan_demo(request)
+    except OSError as exc:
+        raise HTTPException(503, 'Palisades demo assets unavailable') from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc

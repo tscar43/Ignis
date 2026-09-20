@@ -16,6 +16,11 @@ GEOD = Geod(ellps='WGS84')
 def load_graph():
     """Read only a local GraphML cache; never fetch roads in a request."""
     path = Path(os.environ.get('IGNIS_GRAPH_PATH', OSM_PATH))
+    return read_graph(path)
+
+
+@lru_cache(maxsize=4)
+def read_graph(path):
     graph = nx.read_graphml(path, force_multigraph=True)
     if not graph.is_directed():
         raise ValueError('Road graph must be directed')

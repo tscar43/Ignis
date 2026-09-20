@@ -32,21 +32,18 @@ def synthetic_routing_fire(monkeypatch):
 
 
 
-def test_plan_prefers_lower_exposure_and_preserves_metrics():
+def test_plan_withholds_fast_route_through_one_hour_risk():
     response = client.post('/plan', json=REQUEST)
     assert response.status_code == 200, response.text
     result = response.json()
-    recommended, fastest = result['routes']
-    assert recommended['travel_time_min'] == 9
-    assert fastest['travel_time_min'] == 4
-    assert recommended['exposure'] == 0 < fastest['exposure']
-    assert fastest['exposure_breakdown_km']['h1'] > 1
-    assert fastest['exposure_breakdown_km']['h3'] == 0
-    assert fastest['exposure_breakdown_km']['h6'] == 0
-    assert recommended['geometry']['coordinates'][0] == [-121.62, 39.76]
-    assert recommended['geometry']['coordinates'][-1] == [-121.58, 39.76]
-    assert 'Demo Bypass' in recommended['named_roads']
-    assert any('1-hour' in w for w in result['warnings'])
+    assert len(result['routes']) == 1
+    route = result['routes'][0]
+    assert route['type'] == 'recommended'
+    assert route['travel_time_min'] == 9
+    assert route['exposure_breakdown_km']['h1'] == 0
+    assert route['geometry']['coordinates'][0] == [-121.62, 39.76]
+    assert route['geometry']['coordinates'][-1] == [-121.58, 39.76]
+    assert 'Demo Bypass' in route['named_roads']
 
 
 def test_current_fire_blocks_fastest_too_and_does_not_mutate_cache():
@@ -104,5 +101,6 @@ def test_identical_routes_disclosed(monkeypatch):
         fire['risk_polygons'][band] = {'type': 'FeatureCollection', 'features': []}
     monkeypatch.setattr('backend.main.get_fire_result', lambda mode, t: FireResult(fire, 'demo'))
     result = client.post('/plan', json=REQUEST).json()
-    assert result['routes'][0]['geometry'] == result['routes'][1]['geometry']
-    assert any('also the recommended' in w for w in result['warnings'])
+    assert len(result['routes']) == 1
+    assert result['routes'][0]['travel_time_min'] == 4
+    assert any('No distinct alternative' in w for w in result['warnings'])

@@ -83,29 +83,44 @@ $env:IGNIS_GRAPH_PATH = 'backend/routing/demo/graph.graphml'
 ```
 
 Unit tests select this synthetic graph and inject separate synthetic hazards to
-verify a 4-minute direct route versus a 9-minute lower-exposure bypass. Generate
+verify that a 4-minute route through 1-hour risk is omitted and the eligible
+9-minute bypass is returned. Generate
 only those backend-owned fixtures with
 `./.venv/Scripts/python.exe scripts/build_demo.py`. Integration tests use the real
 OSM cache and published fire payloads, checking road geometry, current-fire
 avoidance, household filtering and blocked replay behavior.
 
-The engine output feeds route scoring as plain dictionaries. Current-fire edges
-are blocked for both route types. Each remaining edge uses its most severe
-intersecting band; only the intersection length in that band is counted.
+The engine output feeds route scoring as plain dictionaries. `/plan` first
+blocks current fire and the modeled 1-hour risk region, including origin and
+destination access connectors. It then chooses the quickest eligible shelter
+and road route. Distances within cumulative bands are counted once, at the
+most severe band covering each segment:
 
 `weighted_km = 10*h1_km + 4*h3_km + h6_km`
 
-`cost_minutes = travel_time_seconds/60 + 4*weighted_km`
-
 `exposure = clamp(weighted_km/(10*route_distance_km), 0, 1)`
 
-Lower bands on a long edge are omitted by this edge-level approximation.
-Recommended minimizes time plus exposure cost; fastest minimizes time to the same
-selected eligible shelter. Coordinates are [lon, lat]; output units are minutes
-and kilometres. Snap distances over 1 km are rejected. Access segments, traffic,
-live capacity, turn restrictions and official road closures are not modeled.
-Origin/destination access segments can be hundreds of metres and are not
-routed or assessed for fire exposure; the response discloses snap distances.
+The exposure metric describes the route; it does not override travel-time
+ranking after exclusions. Any 3-hour/6-hour exposure produces a warning.
+These checks are a routing policy, not a certification of safety.
+
+**Frontend change:** `routes` contains one `recommended` route and at most one
+`alternative`. Do not assume exactly two entries or a `fastest` entry. A second
+route must meet the same exclusions, have different geometry, share at most
+80% of the shorter route's edge length, and take no more than 50% longer.
+Search inspects at most 20 shortest simple paths; no alternative means none was
+found under these limits. Missing/stale evacuation input suppresses alternatives.
+
+Fresh supplied evacuation order and warning zones cannot be entered. An origin
+already inside a zone may follow a contiguous exit, without re-entry; destinations
+inside restricted zones are excluded. This is a conservative application policy,
+not an assertion that every warning zone is an official road closure.
+
+Coordinates are [lon, lat], times are minutes and distances are kilometres.
+Snap distances over 1 km are rejected (50 m for reviewed FEMA entrances).
+Connectors are checked for excluded hazards/zones but are not modeled driving
+segments; their time, distance, and longer-horizon exposure are not included.
+Traffic, live road closures, turn restrictions and live available beds are not modeled.
 
 GET /shelters filters static fictional shelter data. POST /geocode recognizes
 123 Oak St / Street only. POST /chat remains 501 pending the frontend-owned agent.
@@ -134,3 +149,64 @@ shows the real Butte County catalogue and access gaps; `GET /shelters?source=fem
 filters eligible records. `POST /plan` accepts `shelter_source=fema`. Defaults
 retain the fictional demo. Closed/stale/unknown-required records never silently
 fall back to demo destinations.
+
+## Palisades judging demo and frontend handoff
+
+No keys or network are needed at runtime. Start the API normally, then:
+
+- `GET /demo/palisades` supplies the historical evacuation GeoJSON, matching
+  fire replay, default origin/destination, and banner text.
+- `POST /demo/palisades/plan` accepts `apply_evacuation_orders` (default `true`)
+  and optional `origin` and `destination` coordinates. Send `{}` to use the
+  verified comparison points.
+
+```powershell
+Invoke-RestMethod http://localhost:8000/demo/palisades
+Invoke-RestMethod http://localhost:8000/demo/palisades/plan -Method Post -ContentType 'application/json' -Body '{"apply_evacuation_orders":true}'
+Invoke-RestMethod http://localhost:8000/demo/palisades/plan -Method Post -ContentType 'application/json' -Body '{"apply_evacuation_orders":false}'
+```
+
+Frontend: draw `evacuations.features` from the GET response as the map overlay
+(`properties.level` is `order` or `warning`). Use red for orders and amber for
+warnings. Render the returned `banner.title`, `banner.message`, `banner.as_of`
+and linked `banner.source_url` prominently. The frontend owns styling and the
+AI agent. The toggle changes the POST request, not the stored polygon or fire
+payload. Keep the polygon visible in both views so judges can see the crossing.
+Replace map routes with each new response; cancel/ignore older responses when
+users toggle quickly. On 422, clear the prior route and display `detail`.
+
+With restrictions ON, `routes[0].type` is `recommended`. With restrictions OFF,
+it is `comparison`, `comparison_only` is true, no alternatives are offered, and
+the banner states that evacuation restrictions are ignored. Current-fire and
+1-hour exclusions remain enabled in both states. The toggle exists only on this
+historical demo endpoint and cannot disable restrictions in live `/plan`.
+
+The fixed January 8, 2025 03:00 Pacific snapshot contains one archived order
+polygon and four warning polygons. It is not a current alert. The source's daily
+backup timestamp is not the original issuance time. See
+[asset provenance](../routing/demo/PALISADES.md). The selected destination is
+an arbitrary demonstration road point, **not a verified shelter**. Roads are a
+current OSM cache, not reconstructed 2025 traffic or closure conditions.
+
+## Current evacuation input (optional, separate from the historical demo)
+
+`GET /evacuations?lat=...&lon=...` reports status, coverage, source polygons and
+orders covering the location. No configured data means `status: unknown`, not
+an all-clear. `mode` defaults to `live`; source mode must match the request.
+
+Set `IGNIS_EVACUATIONS_PATH` to an operator-maintained local JSON snapshot.
+This is a read-only integration, not an automatic official-feed subscription.
+The validated shape is `OrderSnapshot` in `backend/api/evacuations.py`: a
+FeatureCollection with `mode`, timezone-aware `fetched_at`, `source_url`,
+`authority`, EPSG:4326 polygon `coverage`, and `features`. Each feature has
+polygon geometry and properties `id`, `zone`, `level` (`order`, `warning`,
+`lifted`), `authority`, `source_url`, `updated_at`, `valid_until`, `instructions`.
+Only declare coverage that the input actually covers; an empty feature list is
+not proof of conditions outside that area. Replace the complete snapshot
+atomically when orders are changed/lifted.
+
+Snapshots older than 30 minutes, future-dated snapshots, or any expired record
+are stale. Live planning returns 503 without fresh matching evacuation input
+or when the fire cache is stale. Supplied coverage must contain the complete
+route and access connectors. Invalid configured files return 503. Historical
+Palisades assets are served separately and never treated as fresh live orders.

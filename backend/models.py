@@ -69,7 +69,7 @@ class ExposureBreakdown(Model):
 
 
 class Route(Model):
-    type: Literal['recommended', 'fastest']
+    type: Literal['recommended', 'alternative', 'comparison']
     geometry: RouteGeometry
     travel_time_min: float = Field(ge=0)
     distance_km: float = Field(ge=0)
@@ -85,6 +85,7 @@ class PlanResponse(Model):
     destination: Shelter
     routes: list[Route]
     warnings: list[str]
+    evacuation: dict = Field(default_factory=dict)
 
 
 class GeocodeRequest(Model):

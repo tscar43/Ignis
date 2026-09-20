@@ -37,14 +37,15 @@ def test_published_demo_has_reachable_eligible_shelter(household):
     assert all('osmid' in e for _, _, e in graph.edges(data=True))
     road_geometry = unary_union([e['geometry'] for _, _, e in graph.edges(data=True)])
     current = unary_union([shape(f['geometry'])
-                           for f in fire['risk_polygons']['current']['features']])
+                           for band in ('current', 'h1')
+                           for f in fire['risk_polygons'][band]['features']])
     shelter = plan['destination']
     assert shelter['capacity'] >= household.get('occupants', 1)
     assert not household.get('accepts_pets') or shelter['accepts_pets']
     assert not household.get('wheelchair_accessible') or shelter['accessible']
     assert not current.intersects(Point(shelter['lon'], shelter['lat']))
     assert plan['data_as_of'] == fire['data_as_of']
-    assert [r['type'] for r in plan['routes']] == ['recommended', 'fastest']
+    assert [r['type'] for r in plan['routes']] == ['recommended']
     for route in plan['routes']:
         coords = route['geometry']['coordinates']
         origin_node, _ = nearest_node(graph, ORIGIN['lat'], ORIGIN['lon'])
@@ -66,4 +67,4 @@ def test_published_replay_does_not_invent_a_route():
     response = client.post('/plan', json={
         'origin': ORIGIN, 'mode': 'replay', 't': 'T0'})
     assert response.status_code == 422
-    assert 'No reachable shelter' in response.json()['detail']
+    assert any(reason in response.json()['detail'] for reason in ('No reachable shelter', '1-hour risk'))
