@@ -164,11 +164,26 @@ def test_invalid_mode_time_combinations(url):
 
 
 def test_published_demo_cannot_invent_route_through_blocked_network(monkeypatch):
-    from backend.routing.roads import load_graph
+    from backend.routing.roads import DATA_DIR, load_graph
 
+    monkeypatch.setenv('IGNIS_GRAPH_PATH', str(DATA_DIR / 'graph.graphml'))
+    load_graph.cache_clear()
     graph = load_graph().copy()
+    load_graph.cache_clear()
     graph.remove_node('outer_southeast')
     monkeypatch.setattr('backend.routing.routes.load_graph', lambda: graph)
     response = client.post('/plan', json={'origin': {'lat': 39.76, 'lon': -121.62}})
     assert response.status_code == 422
     assert 'No reachable shelter' in response.json()['detail']
+
+
+def test_palisades_fixture_is_served_whole_and_is_not_a_fire_payload():
+    """The comparison carries model scores, not risk bands, so it must not be
+    validated against the /fire contract -- and must not be trimmed to it."""
+    body = client.get('/palisades').json()
+    assert body['fire'].startswith('Palisades Fire')
+    assert len(body['windows']) == 4
+    window = body['windows'][0]
+    assert {'seed', 'observed', 'predictions', 'models'} <= set(window)
+    assert all('iou' in stats for stats in window['models'].values())
+    assert 'risk_polygons' not in body

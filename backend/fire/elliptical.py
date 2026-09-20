@@ -60,13 +60,17 @@ def head_to_back(wind_kmh: float) -> float:
     return (1 + e) / (1 - e) if e < 1 else math.inf
 
 
-def step_factors(wind_kmh: float, wind_toward_deg: float) -> list[float]:
+def step_factors(wind_kmh: float, wind_toward_deg: float,
+                 convergence_deg: float = 0.0) -> list[float]:
     """R(theta)/R_head per NEIGHBOURS direction. Same shape `_step_propensity` returns.
 
     Row index grows southward, so north is -drow -- the bearing convention has
     to match `spread._step_propensity` exactly or the ellipse points the wrong
-    way while still looking like a plausible fire.
+    way while still looking like a plausible fire. That includes
+    `convergence_deg`: the step bearing is in EPSG:5070, the wind bearing is
+    true, and the two frames differ -- see `terrain.grid_convergence`.
     """
+    wind_toward_deg -= convergence_deg
     e = eccentricity(length_to_breadth(wind_kmh))
     factors = []
     for drow, dcol in NEIGHBOURS:

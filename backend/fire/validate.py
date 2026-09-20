@@ -3,10 +3,20 @@
 Ground truth here is the union of FIRMS detections up to the validation time,
 rasterized exactly the way ignition seeds are. That is deliberate but limited:
 a detection is an *actively burning* pixel, so a cell that burned and cooled
-stops being reported. The observed footprint therefore understates burned
-area, and the absolute IoU is pessimistic. The ablation -- wind only vs
-+fuel vs +fuel+slope, all scored the same way -- is the honest comparison,
-because the bias cancels.
+stops being reported.
+
+That understatement is smaller than it sounds -- `observed()` accumulates
+every detection up to `upto`, so a cell that burned and cooled is still in the
+mask that saw it burn -- but it does not vanish: fire that never coincided with
+an overpass is missed outright, and the absolute IoU stays pessimistic.
+
+What does NOT follow is the claim this file used to make, that the bias
+cancels across the ablation. Every configuration being scored against the same
+imperfect mask makes the comparison *fair*; it does not make the ranking
+unbiased, because a mask built from 375 m detection pixels can systematically
+favour one footprint shape over another, and the configurations differ exactly
+in shape. Treat the ablation as a like-for-like comparison, not as evidence
+that the ordering is the true one.
 
 Each configuration is calibrated separately before scoring. Sharing one R0
 would make the ablation meaningless -- adding F_fuel only slows the model
@@ -14,28 +24,37 @@ down, so IoU would measure spread rate rather than whether the fuel term puts
 fire in better places. Fit on one day, score on the next; `FIRES` holds both.
 
 RESULT, recorded honestly because it is not what we expected: the fuel and
-slope terms do NOT improve IoU, on either fire. Growth-only IoU:
+slope terms do NOT improve IoU, on either fire. Growth-only IoU, re-measured
+2026-09-20 after the audit fixes (midnight-crossing truth, true simulated
+horizon, grid-vs-true north):
 
                         Camp 2018-11-09       Dixie 2021-07-16
                       +1.7 h     +11.4 h     +1.7 h     +10.5 h
-  wind only            0.279       0.385      0.232       0.376
-  wind+fuel            0.284       0.314      0.222       0.353
-  wind+fuel+slope      0.274       0.314      0.259       0.334
+  wind only            0.281       0.370      0.238       0.345
+  wind+fuel            0.273       0.307      0.226       0.325
+  wind+fuel+slope      0.265       0.305      0.266       0.306
+
+The fixes moved every number and changed no conclusion. For the record, the
+pre-fix table read 0.279/0.284/0.274, 0.385/0.314/0.314, 0.232/0.222/0.259,
+0.376/0.353/0.334 -- the one ordering that flipped is Camp at +1.7 h, where
+wind+fuel was ahead by 0.005 and is now behind by 0.008. Both are noise at
+this sample size; neither supports a claim either way.
 
 Camp was run first, and the explanation it suggested -- that a fire under
-35 km/h wind is wind-driven rather than fuel-limited, so a fuel term tuned for
+34 km/h wind is wind-driven rather than fuel-limited, so a fuel term tuned for
 moderate conditions adds noise -- predicts that a slow fire reverses the
 ordering. Dixie's first week is that test: 10 km up the same canyon, sharing
-terrain, fuel vintage and reanalysis cell, at 13 km/h instead of 35. It does
+terrain, fuel vintage and reanalysis cell, at 10 km/h instead of 34. It does
 not reverse. Wind alone still wins at ~10 h, by the same margin. The regime
 explanation is dead: whatever costs the fuel term IoU is not specific to a
 wind-driven fire. (The second scoring pair on each fire agrees with the first;
 `python -m backend.fire.validate` prints all of them.)
 
 What Dixie does show is where the terms earn their place. At +1.7 h in that
-canyon, wind+fuel+slope is the best configuration -- 0.259 against 0.232 --
+canyon, wind+fuel+slope is the best configuration -- 0.266 against 0.238 --
 and slope is what carries it, since fuel alone scores worse than no fuel at
-all. Short range, steep ground, the terrain term helps.
+all. Short range, steep ground, the terrain term helps. This is the one
+finding the rerun strengthened rather than merely preserved.
 
 Three things checked and ruled out:
 
@@ -53,7 +72,7 @@ Three things checked and ruled out:
 
 The leading remaining explanation is the calibration. F_fuel <= 1 everywhere
 and averages ~0.5, so matching burned area forces R0 up two to three times
-(Camp 9.8 -> 27, Dixie 22 -> 48). The fuel runs therefore drive their grass
+(Camp 6.1 -> 16.45, Dixie 14.53 -> 29.45). The fuel runs therefore drive their grass
 corridors at near-full R0 while timber lags, and that spikier footprint may
 score worse against a truth mask built from 375 m detection pixels than a
 smooth wind ellipse does. Untested -- it needs a shape metric, not IoU.
@@ -94,10 +113,15 @@ def observed(hotspots, upto: datetime, transform, shape_) -> np.ndarray:
 
 def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
     """Everything the model needs for one seed/validate pair, fetched once."""
+    # Span must reach validate_at: a window that crosses UTC midnight is
+    # otherwise scored against truth that stops before its own validation
+    # pass. Same-day windows still come out at days=2.
+    start_date = seed_at.date() - timedelta(days=1)
     hotspots = firms.fetch_many(
-        firms.ARCHIVE_SOURCES, bbox=bbox,
-        start_date=seed_at.date() - timedelta(days=1), days=2)
-    codes, profile = landfire.fetch("fuel", bbox=bbox)
+        firms.ARCHIVE_SOURCES, bbox=bbox, start_date=start_date,
+        days=(validate_at.date() - start_date).days + 1)
+    codes, profile = landfire.fetch("fuel", bbox=bbox,
+                                    vintage=landfire.vintage_for(seed_at))
     transform, shape_ = profile["transform"], codes.shape
 
     seed = [h for h in hotspots if h.acq_time == seed_at]
@@ -106,6 +130,7 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
 
     lat, lon = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
     gap_min = (validate_at - seed_at).total_seconds() / 60
+    convergence = terrain.grid_convergence(transform, shape_)
     return {
         "ignition": seed_from_hotspots(seed, transform, shape_),
         "truth": observed(hotspots, validate_at, transform, shape_),
@@ -113,23 +138,32 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
         "fuel": landfire.fuel_factor(codes),
         "slope": terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
                                        landfire.fetch("aspect", bbox=bbox)[0],
-                                       NEIGHBOURS),
+                                       NEIGHBOURS, convergence_deg=convergence),
         "transform": transform,
+        "convergence": convergence,
         "cell_km2": (transform.a / 1000) ** 2,
         "gap_min": gap_min,
+        # What the model is actually asked to predict: the real elapsed time
+        # between the two passes. `band` is only the public h1/h3/h6 product
+        # band nearest that gap, kept for labelling -- scoring a 12 h window
+        # against the 6 h band was reporting half a simulation as a whole one.
+        "horizon_min": gap_min,
         "band": min(BANDS, key=lambda n: abs(BANDS[n] - gap_min) if BANDS[n] else 1e9),
     }
 
 
 def _predict(setup: dict, use_fuel: bool, use_slope: bool, r0: float,
              step_factors: list[float] | None = None) -> np.ndarray:
+    """Burned mask after the window's real elapsed time, not the nearest band."""
+    horizon = setup["horizon_min"]
     arrival = arrival_times(
         setup["ignition"], setup["wind"].speed_kmh, setup["wind"].toward_deg,
         cell_m=setup["transform"].a,
         propensity=setup["fuel"] if use_fuel else None,
         slope=setup["slope"] if use_slope else None, r0=r0,
-        step_factors=step_factors)
-    return arrival <= BANDS[setup["band"]]
+        horizon_min=horizon, step_factors=step_factors,
+        convergence_deg=setup["convergence"])
+    return arrival <= horizon
 
 
 def calibrate(setup: dict, use_fuel: bool, use_slope: bool,

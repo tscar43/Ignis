@@ -75,6 +75,44 @@ not by the engine. Numbers and caveats are in `backend/fire/FINDINGS.md`:
 
     ./.venv/Scripts/python.exe -m backend.fire.palisades
 
+`palisades_replay.json` — the same four windows as GeoJSON, for the frontend's
+stepped model-vs-truth tab. Served unchanged at `GET /palisades`; a static
+fixture on purpose, so the tab never waits on FIRMS mid-presentation.
+
+    ./.venv/Scripts/python.exe -m backend.fire.palisades --json
+
+**This one is not a contract payload.** It has no risk bands, no cumulative
+nesting and no `summary`, so `contract.validate()` does not apply to it. What
+it does share is the CRS convention: every geometry is EPSG:4326, `[lon, lat]`,
+coordinates rounded to 5 decimals.
+
+```
+fire, generated_at        ISO8601 Z
+reseeding, perimeter      the two sentences the UI must show; see below
+r0_m_per_min              fitted spread rate per model, m/min
+length_to_breadth         ellipse L:B at the fit window's wind
+colors                    per-model hex, carried from palisades.py's palette
+windows[]                 one per pass, in time order
+  seed_at, validate_at    real VIIRS overpass times
+  role                    "fit" (window 1) | "scored"
+  gap_h                   hours from seed to validation
+  wind_kmh, wind_toward   wind at the seed pass; toward, already flipped
+  seed_km2                area of the seed footprint
+  observed_km2            area actually detected by validate_at
+  models[name]            r0, predicted_km2, iou, iou_growth
+  seed                    FeatureCollection of Polygons
+  observed                "
+  predictions[name]       "
+```
+
+Two things a consumer must not get wrong, which is why they ship as prose in
+the payload rather than as a note here:
+
+- **Window 1 is the calibration window.** R0 is fitted on it. Its IoU restates
+  that fit and is not a score — label it, never headline it.
+- **Every window re-seeds from observed truth**, not from the previous
+  window's prediction. Four independent ~12 h forecasts, not one 48 h run.
+
 ## Live, not replay
 
 `risk_demo.json` is fake and `risk_replay.json` is a 2018 fire. For a live
@@ -82,3 +120,62 @@ feed call the engine directly, no file involved:
 
     from backend.fire.spread import risk_payload
     risk_payload()            # newest VIIRS pass + GOES ABI frame, HRRR wind
+
+## Every fire in the country
+
+`risk_payload()` answers for one bbox. `GET /fires` answers for all of CONUS:
+
+    {
+      "generated_at": "2026-09-20T01:29:58Z",
+      "bbox": [-125.0, 24.4, -66.9, 49.4],
+      "incidents_found": 310,          // clusters in the newest FIRMS sweep
+      "incidents_active": 544,         // still burning: see `excluded`
+      "incidents_modelled": 12,        // the rest are below the cut, not missing
+      "named_by_wfigs": 13,            // clusters matched to a NIFC incident
+      "excluded": {                    // detected, then deliberately left out
+        "static heat source": 60,      //   flares, refineries, landfills
+        "contained": 1                 //   NIFC calls it 100% contained
+      },
+      "fires": [ { ...a whole payload..., "incident": {...} } ],
+      "failed": [ { ...incident..., "error": "HTTPError: ..." } ]
+    }
+
+Every entry of `fires` is one complete payload exactly as documented above --
+same keys, same `[lon, lat]`, same cumulative bands -- with one block added:
+
+    "incident": {
+      "id": "37.60N119.61W",           // cluster centroid to 0.01 deg
+      "lon": -119.6149, "lat": 37.5992,
+      "bbox": [-119.79, 37.46, -119.42, 37.74],
+      "detections": 236,
+      "frp_mw": 2804.3,                // total radiative power
+      "newest_pass": "2026-09-19T21:10:00Z",
+
+      // present only when the cluster matched a NIFC WFIGS incident
+      "name": "Dome",
+      "irwin_id": "{AACFD673-4C1B-4CDF-B9DD-128E34BD7272}",
+      "acres": 2384,                   // NIFC's number, not ours
+      "contained_pct": 15,
+      "place": "Mariposa County, CA",  // somewhere a person can picture
+      "agency": "NPS",
+      "discovered": "2026-09-15T15:28:00Z",
+      "updated": "2026-09-20T00:32:21Z",   // when the agency last touched it
+      "has_perimeter": true,           // seeded from the official perimeter
+      "source": "NIFC WFIGS"
+    }
+
+So a client that can draw `/fire` can draw `/fires` by looping. Three things
+to expect:
+
+- `failed` is often non-empty. A dozen fires is a dozen chances for LANDFIRE,
+  HRRR or GOES to time out, and one fire failing does not fail the run.
+- The list is not all the clusters. Contained fires, incidents nobody has
+  updated in a week, and persistent industrial heat are excluded outright and
+  counted in `excluded`. Of what remains, fires NIFC has an incident record
+  for come first, then the brightest of the rest -- mostly agricultural
+  burning, which looks identical to a wildfire from orbit.
+- `data_as_of.firms` can be over a day old on a real fire, and that is not a
+  bug to filter out. Clouds and orbit gaps mean roughly a third of active
+  incidents have no clear overpass in the last 24 h. Show the age.
+- The NIFC block is absent, not null, when nothing matched. Check for `name`
+  before reading `acres`, and fall back to `id`, which is always there.

@@ -18,19 +18,49 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-from .firms import DEMO_BBOX
+from .firms import DEMO_BBOX, cache_write
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache"  # gitignored
 CRS = "EPSG:5070"
 BASE = "https://lfps.usgs.gov/arcgis/rest/services"
 
 # LF2016 fuel: the last vintage before the 2018 Camp Fire, so replay is not
-# scored against fuel that the fire itself changed. Switch to LF2025 for live.
+# scored against fuel that the fire itself changed.
+#
+# A live fire wants the newest vintage and a replay wants the one that predates
+# it, and "switch this constant for live" was the whole selection mechanism --
+# which meant live ran on 2016 fuel, because nobody switched it. `vintage`
+# makes the choice per call, and `SERVICES` is only the default map.
 SERVICES = {
     "fuel": "Landfire_LF2016/LF2016_FBFM40_CONUS",
     "slope": "Landfire_Topo/LF2020_SlpD_CONUS",  # SlpD = degrees, not percent
     "aspect": "Landfire_Topo/LF2020_Asp_CONUS",  # downslope direction
 }
+
+# Fuel vintages this module knows how to ask for, all three confirmed against
+# the live service. Terrain is not reissued per vintage the way fuel is, so
+# slope and aspect stay on the LF2020 topo layers.
+FUEL_SERVICES = {
+    "LF2016": "Landfire_LF2016/LF2016_FBFM40_CONUS",
+    "LF2022": "Landfire_LF2022/LF2022_FBFM40_CONUS",
+    "LF2023": "Landfire_LF2023/LF2023_FBFM40_CONUS",
+}
+
+
+def vintage_for(when=None) -> str:
+    """The fuel vintage to model `when` with. None (live) means the newest.
+
+    A replay wants the last vintage published BEFORE its fire, so the model is
+    not handed fuel the fire itself removed -- the reason Camp 2018 runs on
+    LF2016. That rule was a comment next to a constant rather than code, which
+    is how a 2025 fire ended up being modelled on 2016 vegetation: nobody was
+    going to remember to switch it per run.
+    """
+    if when is None:
+        return max(FUEL_SERVICES, key=lambda v: int(v[2:]))
+    earlier = [v for v in FUEL_SERVICES if int(v[2:]) < when.year]
+    return max(earlier, key=lambda v: int(v[2:])) if earlier else min(
+        FUEL_SERVICES, key=lambda v: int(v[2:]))
 
 _to_albers = Transformer.from_crs("EPSG:4326", CRS, always_xy=True)
 
@@ -54,14 +84,32 @@ FUEL_GROUPS = {  # for the summary the LLM reads
 }
 
 
+def service_for(layer: str, vintage: str | None = None) -> str:
+    """The image service path for `layer`, at `vintage` if it has vintages."""
+    if vintage is None:
+        return SERVICES[layer]
+    if layer != "fuel":
+        raise ValueError(f"{layer!r} has no vintages; only fuel does")
+    return FUEL_SERVICES[vintage]
+
+
 def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True,
-          out_epsg: int = 5070, size: str | None = None):
+          out_epsg: int = 5070, size: str | None = None,
+          vintage: str | None = None):
     """(array, rasterio profile) for `layer` over `bbox` (W,S,E,N in EPSG:4326).
 
     30 m native is resampled to `cell_m`; 90-150 m is plenty for a demo and
     keeps the arrival-time search fast. Nearest-neighbour always: FBFM40 codes
     are categories, and interpolating them invents fuel models that don't exist.
+
+    The cache key includes the service path, not just the layer name. It did
+    not, which made the cache silently wrong in the one case that matters:
+    point `fuel` at a different vintage over the same bbox and size, and the
+    old raster came straight back under the same tag. Any recorded experiment
+    that compared vintages has to be re-run unless its caches were cleared by
+    hand -- a cross-vintage result from a shared cache measured nothing.
     """
+    service = service_for(layer, vintage)
     west, south, east, north = _to_albers.transform_bounds(*bbox)
     size = size or f"{round((east - west) / cell_m)},{round((north - south) / cell_m)}"
     params = {
@@ -70,16 +118,15 @@ def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True,
         "interpolation": "RSP_NearestNeighbor", "noData": -9999, "f": "image",
     }
     tag = hashlib.sha1(
-        f"{layer}|{params['bbox']}|{size}|{out_epsg}".encode()).hexdigest()[:12]
+        f"{service}|{params['bbox']}|{size}|{out_epsg}".encode()).hexdigest()[:12]
     cached = CACHE_DIR / f"{layer}_{cell_m}m_{tag}.tif"
 
     if not (use_cache and cached.exists()):
-        response = httpx.get(f"{BASE}/{SERVICES[layer]}/ImageServer/exportImage",
+        response = httpx.get(f"{BASE}/{service}/ImageServer/exportImage",
                              params=params, timeout=180)
         if not response.headers.get("content-type", "").startswith("image"):
             raise RuntimeError(f"LANDFIRE {layer}: {response.text[:200]}")
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cached.write_bytes(response.content)
+        cache_write(cached, response.content)
 
     with rasterio.open(cached) as ds:
         return ds.read(1), ds.profile
@@ -149,8 +196,9 @@ def overlay_png(path, bbox=DEMO_BBOX, width: int = 600) -> dict:
         "legend": {name: f"#{r:02x}{g:02x}{b:02x}" for (low, (r, g, b, _)), name
                    in zip(_PALETTE, ["non-burnable", "grass", "grass-shrub", "shrub",
                                      "timber understory", "timber litter", "slash"])},
-        "note": "LANDFIRE LF2016 FBFM40, grouped by fuel family. Display only -- "
-                "the model runs on the 30 m source in EPSG:5070.",
+        "note": "LANDFIRE LF2016 FBFM40, grouped by fuel family. Display only "
+                "-- the model runs in EPSG:5070 on the same source resampled "
+                "to its grid, 120 m by default, not at the 30 m native cell.",
     }
 
 

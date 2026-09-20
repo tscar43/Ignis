@@ -45,3 +45,9 @@ htmlcov/
 # Small backend-owned synthetic routing fixture
 !backend/routing/demo/graph.graphml
 cache/
+
+# Reviewed OSM cache for the default Paradise routing area
+!backend/routing/osm/paradise.graphml
+
+# Offline Palisades evacuation comparison (under 10 MB)
+!backend/routing/osm/palisades.graphml

@@ -10,6 +10,7 @@ in bands_to_geojson, at the very end.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,15 @@ from ..weather import nws
 from . import contract, firms, goes, landfire, terrain
 from .firms import DEMO_BBOX
 
+logger = logging.getLogger(__name__)
+
 BANDS = {"current": 0, "h1": 60, "h3": 180, "h6": 360}  # minutes
+
+# How far back of `seed_time` still counts as the same satellite pass. A VIIRS
+# granule is 6 minutes and a bbox this size falls inside one, but the swath is
+# stamped per detection, so the minutes spread. 10 keeps one pass together
+# without reaching the previous overpass, which is hours away.
+PASS_WINDOW_MIN = 10
 
 # 8-neighbourhood: (drow, dcol). Compass bearing of each step is derived from
 # it, so the wind term and the step length stay in sync.
@@ -55,12 +64,17 @@ WIND_EXPONENT = 3.0
 R0_M_PER_MIN = 10.0
 
 
-def _step_propensity(wind_kmh: float, wind_toward_deg: float) -> list[float]:
+def _step_propensity(wind_kmh: float, wind_toward_deg: float,
+                     convergence_deg: float = 0.0) -> list[float]:
     """Wind factor per neighbour direction. Position-independent, so 8 numbers.
 
     Row index grows southward, so north is -drow. The bearing of a step is
-    atan2(east, north) in compass degrees.
+    atan2(east, north) in *grid* degrees, which is not a compass bearing:
+    EPSG:5070's north and true north differ by the meridian convergence.
+    `convergence_deg` brings the weather feed's true bearing into that frame --
+    see `terrain.grid_convergence`.
     """
+    wind_toward_deg -= convergence_deg
     factors = []
     for drow, dcol in NEIGHBOURS:
         bearing = math.degrees(math.atan2(dcol, -drow)) % 360
@@ -79,6 +93,7 @@ def arrival_times(
     horizon_min: float = max(BANDS.values()),
     r0: float = R0_M_PER_MIN,
     step_factors: list[float] | None = None,
+    convergence_deg: float = 0.0,
 ) -> np.ndarray:
     """Minutes until fire reaches each cell. Unreached cells come back inf.
 
@@ -90,11 +105,16 @@ def arrival_times(
     `step_factors` replaces this module's wind shape with one supplied per
     NEIGHBOURS direction, which is how `elliptical.py` runs the FARSITE-class
     baseline through the same solver. None keeps the cos^3 form.
+
+    `convergence_deg` is the grid-vs-true north offset for this raster; it only
+    reaches the built-in wind shape, because a caller supplying `step_factors`
+    has already built them in the grid frame. 0 is right for a synthetic grid
+    and wrong for a real one -- `Scene.convergence` has the real value.
     """
     if propensity is None:
         propensity = np.ones(ignition.shape, dtype="float32")
     rows, cols = ignition.shape
-    wind = (_step_propensity(wind_kmh, wind_toward_deg)
+    wind = (_step_propensity(wind_kmh, wind_toward_deg, convergence_deg)
             if step_factors is None else step_factors)
     lengths = [cell_m * math.hypot(dr, dc) for dr, dc in NEIGHBOURS]
 
@@ -145,6 +165,28 @@ def seed_from_hotspots(hotspots, transform, shape_):
             mask[max(0, row - reach):row + reach + 1,
                  max(0, col - reach):col + reach + 1] = True
     return mask
+
+
+def seed_from_perimeter(geometry: dict, transform, shape_) -> np.ndarray:
+    """Ignition mask from an official perimeter, rasterized onto the grid.
+
+    A WFIGS perimeter is the mapped burned area, usually from an overnight IR
+    flight. Satellite pixels mark where the fire is *hottest*, which is not the
+    same as where its edge is, so the two seeds answer different questions and
+    the caller unions them: the perimeter says how big the fire already is, the
+    fresh detections say how far it has run since the flight.
+
+    Seeding the whole footprint does not double-project it. Arrival time is a
+    minimum over paths, so a cell inside the envelope contributes nothing; only
+    the outer edge can move. A perimeter larger than the model grid is clipped
+    by the rasterization, which is the same span cap `national.py` documents.
+    """
+    to_albers = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True).transform
+    projected = shapely_transform(to_albers, shape(geometry))
+    burned = rasterio.features.rasterize(
+        [(projected, 1)], out_shape=shape_, transform=transform, fill=0,
+        all_touched=True)  # all_touched: a sliver of perimeter still counts
+    return burned.astype(bool)
 
 
 def bands_to_geojson(arrival: np.ndarray, transform, simplify_m: float = 60.0,
@@ -220,26 +262,44 @@ class Scene:
     wind: nws.Wind
     seed: list
     seed_time: datetime
+    # Which inputs were missing, e.g. ("goes_unavailable",). Deliberately not
+    # in the JSON payload: `contracts/` is shared and needs all three of us to
+    # agree before a new key appears in it.
+    degraded: tuple[str, ...] = ()
 
     @property
     def cell_m(self) -> float:
         return self.transform.a
 
+    @property
+    def convergence(self) -> float:
+        """Grid-vs-true north for this raster; see `terrain.grid_convergence`."""
+        return terrain.grid_convergence(self.transform, self.propensity.shape)
+
 
 def gather(bbox=DEMO_BBOX, when: datetime | None = None,
-           peak_window_h: int = 8) -> Scene:
+           peak_window_h: int = 8, hotspots: list | None = None,
+           perimeter: dict | None = None) -> Scene:
     """Everything a spread model needs for `bbox` at `when` (None = live).
 
     Both derived layers are always built -- the rasters are disk-cached, and a
     model that wants the wind-only baseline just passes None to arrival_times.
+
+    `hotspots` supplies detections already in hand instead of fetching them.
+    `national.py` clusters one CONUS query into incidents and hands each its
+    own members, which is one FIRMS request for the country rather than one
+    per fire. `perimeter` is an official WFIGS footprint, unioned into the
+    seed -- see `seed_from_perimeter`.
     """
     live_mode = when is None
-    hotspots = firms.fetch_many(
-        firms.LIVE_SOURCES if live_mode else firms.ARCHIVE_SOURCES, bbox=bbox,
-        # Replay starts a day early: at 01:50 the newest pass is still
-        # yesterday evening's, and fetching only `when`'s date would miss it.
-        start_date=None if live_mode else when.date() - timedelta(days=1),
-        days=1 if live_mode else 2)
+    if hotspots is None:
+        # Both paths ask for two days and keep the newest pass. Replay starts a
+        # day early because at 01:50 the newest pass is still yesterday
+        # evening's; live does the same because NRT's "latest" is today in UTC
+        # and today is empty until the first pass of the day is published.
+        hotspots = (firms.fetch_live(bbox) if live_mode else firms.fetch_many(
+            firms.ARCHIVE_SOURCES, bbox=bbox,
+            start_date=when.date() - timedelta(days=1), days=2))
 
     # Seed from one satellite pass, not all of them: older detections are
     # already-burned area, and seeding them projects the fire twice. Replay
@@ -247,10 +307,15 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     # would have known at that moment -- often hours stale, which is the point.
     available = [h.acq_time for h in hotspots
                  if live_mode or h.acq_time <= when]
-    if not available:
-        raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
-    seed_time = max(available)
-    seed = [h for h in hotspots if h.acq_time == seed_time]
+    seed, seed_time, degraded = [], None, []
+    if available:
+        seed_time = max(available)
+        # A pass is a time window, not a timestamp. FIRMS stamps each detection
+        # with its own acquisition minute, so one overpass of a bbox arrives as
+        # several adjacent minutes; matching `== seed_time` keeps the last
+        # minute of the pass and silently drops the rest of it.
+        seed = [h for h in hotspots
+                if 0 <= (seed_time - h.acq_time).total_seconds() <= PASS_WINDOW_MIN * 60]
 
     # Live only: add the newest GOES ABI frame, scanned minutes ago rather than
     # hours. Union rather than replace -- ABI sees only the hottest cores, so
@@ -262,26 +327,49 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     # from the origin. Arrival time is a minimum over paths, so a seed inside
     # the envelope contributes nothing; only the outer edge moves, and the ABI
     # frame is the one observation entitled to move it.
+    #
+    # Both failure directions are degraded answers rather than no answer: ABI
+    # alone still locates a fire VIIRS has not passed over yet, and an
+    # unreachable S3 bucket must not take down a payload VIIRS can already
+    # support. `degraded` records which, for the caller that wants to say so.
     if live_mode:
-        fresh = goes.fetch(bbox)
+        try:
+            fresh = goes.fetch(bbox)
+        except Exception:
+            fresh = []
+            degraded.append("goes_unavailable")
+            logger.warning("GOES ABI fetch failed; serving VIIRS alone", exc_info=True)
         if fresh:
             seed = seed + fresh
-            seed_time = max(seed_time, fresh[0].acq_time)
+            seed_time = max(seed_time or fresh[0].acq_time, fresh[0].acq_time)
+            if not available:
+                degraded.append("no_viirs_pass")
+
+    if not seed:
+        raise RuntimeError(f"no hotspots in {bbox} at {when or 'the latest pass'}")
 
     lat = (bbox[1] + bbox[3]) / 2
     lon = (bbox[0] + bbox[2]) / 2
     wind = (nws.live(lat, lon) if live_mode
             else nws.archived(lat, lon, seed_time, peak_window_h=peak_window_h))
 
-    codes, profile = landfire.fetch("fuel", bbox=bbox)
+    # Fuel vintage follows the moment being modelled, not a constant: live
+    # gets the newest, a replay gets the last one published before its fire.
+    codes, profile = landfire.fetch("fuel", bbox=bbox,
+                                    vintage=landfire.vintage_for(when))
+    ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
+    if perimeter is not None:
+        ignition |= seed_from_perimeter(perimeter, profile["transform"], codes.shape)
+    convergence = terrain.grid_convergence(profile["transform"], codes.shape)
     return Scene(
-        ignition=seed_from_hotspots(seed, profile["transform"], codes.shape),
+        ignition=ignition,
         codes=codes,
         propensity=landfire.fuel_factor(codes),
         slope=terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
                                    landfire.fetch("aspect", bbox=bbox)[0],
-                                   NEIGHBOURS),
-        transform=profile["transform"], wind=wind, seed=seed, seed_time=seed_time)
+                                   NEIGHBOURS, convergence_deg=convergence),
+        transform=profile["transform"], wind=wind, seed=seed, seed_time=seed_time,
+        degraded=tuple(degraded))
 
 
 def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
@@ -295,7 +383,9 @@ def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
         "risk_polygons": bands["risk_polygons"],
         "summary": {
             "wind_speed_kmh": scene.wind.speed_kmh,
-            "wind_toward_deg": round(scene.wind.toward_deg),
+            # % 360 after rounding, not before: round(359.6) is 360, which the
+            # contract rejects as a bearing. Both spread and MAGI land here.
+            "wind_toward_deg": round(scene.wind.toward_deg) % 360,
             "primary_spread_direction": scene.wind.compass,
             "dominant_fuels": landfire.dominant_fuels(burned),
             "area_km2": bands["area_km2"],
@@ -305,18 +395,21 @@ def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
 
 def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
                  use_fuel: bool = True, use_slope: bool = True,
-                 peak_window_h: int = 8) -> dict:
+                 peak_window_h: int = 8, hotspots: list | None = None,
+                 perimeter: dict | None = None) -> dict:
     """The whole contract, in one call. This is what the endpoint returns.
 
     `when=None` is live: NRT hotspots and current NWS wind. A datetime is
     replay: the SP archive and reanalysis wind for that hour.
     """
-    scene = gather(bbox=bbox, when=when, peak_window_h=peak_window_h)
+    scene = gather(bbox=bbox, when=when, peak_window_h=peak_window_h,
+                   hotspots=hotspots, perimeter=perimeter)
     arrival = arrival_times(
         scene.ignition, scene.wind.speed_kmh, scene.wind.toward_deg,
         cell_m=scene.cell_m,
         propensity=scene.propensity if use_fuel else None,
-        slope=scene.slope if use_slope else None)
+        slope=scene.slope if use_slope else None,
+        convergence_deg=scene.convergence)
     # Fail here rather than shipping bad polygons to an evacuation UI. The
     # guard is on this path only, not in assemble(), so it cannot break the
     # ensemble while that is still being written.

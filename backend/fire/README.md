@@ -19,15 +19,19 @@ P=./.venv/Scripts/python.exe                # every doc here uses this interpret
 $P -m backend.fire.spread                   # replay the Camp Fire, print the summary
 $P -m backend.fire.spread --live            # current NRT hotspots + NWS wind
 $P -m backend.fire.spread --replay          # write demo_data/risk_replay.json
+$P -m backend.fire.national                 # model every active fire in CONUS
+$P -m backend.fire.national --list          # just find them: no rasters, no wind
+$P -m backend.fire.wfigs                    # NIFC's current incident list, by size
 $P -m backend.fire.magi                     # MAGI ensemble: three models deliberate
 $P -m backend.fire.validate                 # IoU ablation across validation fires
 $P -m backend.fire.palisades                # Palisades 2025, vs the standard model
+$P -m backend.fire.palisades --json         # the same windows as GeoJSON, for /palisades
 $P -m backend.fire.elliptical               # the ellipse's LB ratio by wind speed
 $P -m backend.fire.rothermel                # spread rate per fuel model by wind
 $P -m backend.fire.contract                 # check shipped payloads against the contract
 $P -m backend.fire.landfire --overlay       # write demo_data/fuel_overlay.png
 $P -m backend.fire.goes W S E N             # newest GOES ABI frame for a bbox
-$P -m pytest backend/fire/tests -q          # 105 tests, all offline, ~1 s
+$P -m pytest backend/fire/tests -q          # 135 tests, all offline, ~1 s
 ```
 
 Entry points run with `-m`: `backend/` is a package and the modules import
@@ -40,7 +44,43 @@ the venv is not activated in a fresh shell, and `python` there is the system
 from backend.fire.spread import risk_payload
 risk_payload()          # live: NRT hotspots + current NWS wind
 risk_payload(when=dt)   # replay: SP archive + reanalysis wind for that hour
+
+from backend.fire.national import discover, national_payload
+discover()              # every active CONUS incident, ranked by radiative power
+national_payload()      # the top 12 of them, each a full contract payload
 ```
+
+`national.py` picks the boxes instead of being handed one: it clusters a
+single CONUS FIRMS query into incidents and runs `risk_payload()` per
+incident, in a process pool, with the cluster's own detections passed in so
+the country costs one FIRMS request rather than one per fire. Served as
+`/fires`. Known edges, all commented at the code: only the top `limit` fires
+are modelled, a cluster wider than `MAX_SPAN_DEG` is clipped to its middle,
+and CONUS excludes AK and HI because `landfire.SERVICES` has no `_AK`/`_HI`
+entry.
+
+`wfigs.py` joins that to NIFC's own record, and it is what makes the national
+view legible rather than a wall of coordinates:
+
+- **Names.** A cluster becomes "the Dome fire, 2384 acres, 15% contained",
+  with an IRWIN id, which is the key every other agency feed joins on.
+- **Ranking.** FIRMS cannot tell a wildfire from a burning field -- both are
+  hot 375 m pixels, and by radiative power alone the top twelve fires in the
+  country were eleven Mississippi Delta crop burns and one wildfire. A cluster
+  with a WFIGS incident record is one an agency is responding to, so those
+  rank first, and fully contained ones sort below the rest.
+- **Seeding.** Where an agency has mapped a perimeter, `spread.gather()`
+  unions it into the ignition mask. Detections mark where a fire is *hottest*;
+  the perimeter is where its edge actually is. The union is the honest seed:
+  the perimeter says how big, the fresh detections say how far it has run
+  since the flight that mapped it.
+- **What counts as current.** `currently_active()` drops three things: fires
+  the agency has fully contained, incidents nobody has touched in a week, and
+  industrial heat that will be exactly as hot tomorrow. On one sweep that was
+  1 contained fire and 60 static sources out of 605 clusters.
+
+This is the opposite of competing with NIFC. Their data is the ground truth
+the projection sits on; the projection is the part they do not publish.
 
 ## Modules
 
@@ -51,11 +91,13 @@ risk_payload(when=dt)   # replay: SP archive + reanalysis wind for that hour
 | `landfire.py` | fuel/slope/aspect rasters, the F_fuel lookup, the map overlay |
 | `terrain.py` | F_slope, directional, from slope and aspect |
 | `spread.py` | arrival-time Dijkstra, polygonize, `risk_payload()`, `replay()` |
+| `national.py` | one FIRMS query over CONUS -> clustered incidents -> a payload per fire |
+| `wfigs.py` | NIFC WFIGS: official incident names, acreage, containment, perimeters |
 | `contract.py` | machine-checkable contract: `validate()` / `check()` |
 | `validate.py` | IoU ablation against real fires — results in `FINDINGS.md` |
 | `elliptical.py` | the Alexander/Finney ellipse FARSITE-class tools use, as a baseline |
 | `rothermel.py` | Rothermel/Albini surface spread and the 40 fuel models. No fitted R0 |
-| `palisades.py` | Palisades 2025 three-way comparison and its figure |
+| `palisades.py` | Palisades 2025 three-way comparison, its figure, and `--json` for the replay tab |
 | `magi.py` | Three-model ensemble, consensus by order statistic. `magi.risk_payload()` is a drop-in for `spread.risk_payload()`. See `MAGI.md`. |
 | `make_demo_data.py` | the hand-drawn day-one fake, superseded, kept as a fixture |
 | `../weather/nws.py` | wind: HRRR live (NWS gridpoint fallback), Open-Meteo archive for replay |
@@ -102,6 +144,67 @@ is kilometres wide, so a GOES detection seeded at VIIRS's 375 m marks one
 120 m grid cell and the morphological closing then deletes it -- the detection
 is fetched, geolocated correctly, and silently does nothing. That is what
 `Hotspot.pixel_m` exists for, and `test_goes.py` pins it.
+
+**Live after midnight.** A FIRMS query with no date means *today in UTC*, and
+NRT publishes a pass some hours after it happens -- so from 00:00Z until the
+first pass of the day lands, "latest" is an empty CSV. At 01:27Z it returned
+zero detections for the whole of CONUS while the previous UTC day had 911.
+That reads as "no fires", not as "no data yet". `firms.fetch_live()` asks for
+two days and lets the caller keep the newest pass, which is what the live path
+already did.
+
+**Parallel cache writes.** Running incidents concurrently means several
+workers want the same GOES frame. Windows refuses to rename over a file
+another one has open, so a plain write-then-replace failed four incidents out
+of twelve with `Access is denied`. `firms.cache_write()` writes a temp file,
+and on a lost race keeps whoever got there first -- every cache key here is
+derived from the request, so the two files are the same bytes.
+
+**The solver holds the GIL.** `arrival_times` is a Python `heapq` loop, not a
+numpy kernel, so it does not release the GIL for its whole run. Six of them in
+a thread pool inside uvicorn starved the event loop so completely that
+`/health` timed out at 20 s while a national run was in flight -- the API was
+dark for minutes, which in a demo looks like a crash. `national.py` uses a
+`ProcessPoolExecutor`: the per-fire work is a dict in and a dict out, so it
+ships to a worker unchanged, and the server stays at 0.2 s throughout. A
+national run of 12 fires takes ~10 s warm.
+
+**"Current" means the current season.** The WFIGS *Current* layers carry the
+year, not the night: 215 of 342 CONUS records were reported more than two
+weeks ago, 90 more than two months. The obvious close-out fields are no help,
+because `FireOutDateTime`, `ControlDateTime` and `ContainmentDateTime` are
+null on every record in the layer. What works is containment plus the record's
+own last-modified stamp -- an incident somebody is still working gets touched
+daily. Age alone is the wrong test: Border 2 was reported 65 days ago, is 74%
+contained, was updated today, and is a real fire burning right now.
+
+**Detection age is not a filter.** The tempting next step is to drop clusters
+whose newest pass is over 24 h old. Measured on a live sweep, that would have
+dropped 4 of 13 active incidents -- they had no clear overpass, which is the
+exact staleness this engine exists to be honest about, not a reason to hide a
+fire. The age is surfaced in the payload and coloured in the UI instead.
+
+**Industrial heat.** VIIRS measures radiant heat, not what is burning, so a
+landfill flare, a refinery and a steel mill are all genuine thermal anomalies
+and all look like small wildfires. The `type` field FIRMS uses to mark "other
+static land source" **does not exist in the NRT feed** -- only in the SP
+archive -- so `vegetation_only=True` is a silent no-op on every live call.
+What separates them is persistence: a wildfire does not burn the same 1 km
+cell for five straight days without an incident record, and a flare does.
+`national.PERSISTENT_DAYS` is that test, and it cost one extra day of FIRMS
+history, not a new data source.
+
+**WFIGS matching.** A wrong name is worse than no name -- an unrelated
+refinery flare labelled with an official incident number looks authoritative.
+Two real failures are pinned in `test_wfigs.py`. A fixed 15 km match radius
+put three Los Angeles County brush calls on industrial heat over the harbour,
+because in a dense county something is always within 15 km; the radius now
+scales with reported acreage, and a 30-acre fire cannot claim a hotspot 12 km
+out. A perimeter that *contains* a cluster wins over one that merely
+intersects it, smallest first, so a new fire inside an old 300,000-acre burn
+scar is still the new fire. And fires whose detections split into two clusters
+are merged on their shared IRWIN id -- otherwise "Border 2" models and draws
+twice, with two different wind readings.
 
 **Wind.** Both sources report the direction wind comes FROM. Everything
 leaving `nws.py` is already flipped to TOWARD, so do not flip it twice --

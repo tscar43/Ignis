@@ -24,6 +24,35 @@ Loading, refresh and retry states clear previous geometry. A 422 plan response s
 
 Each successful refresh remounts map geometry, including the destination marker. Map layer preferences persist. The server's exposure score is displayed as a score, never a probability: each edge contributes intersection length only in its most severe band; weighted km = 10*h1 + 4*h3 + h6. Recommended cost = travel minutes + 4*weighted km. Fastest and recommended can be identical.
 
+## Live national view
+
+A second tab, `Live · every US fire`, draws `GET /fires`: every fire currently
+burning in the contiguous US, each with the same cumulative bands as the
+scenario view. Added by Justin alongside the engine change that produced the
+endpoint; the scenario view and its components are untouched apart from the
+band palette moving to `src/bands.js` so both maps can import it.
+
+The view is built around the things a fire map has to answer at a glance, and
+most of them were borrowed from studying mapofire.com: markers sized by the
+fire's reported acreage, satellite detections coloured by how old the
+observation is (under 12 h / 12-24 h / over 24 h), every timestamp shown as
+"7 h ago" with the absolute UTC stamp on hover, and a detail panel per fire
+with status, containment, the modeled +1/+3/+6h areas and a "how fresh is
+this" block. Selecting a fire sets `?fire=<id>` and the tab title, so a link
+opens on that fire.
+
+The basemap is Esri's Light Gray Canvas, base plus labels. It is desaturated
+on purpose -- the risk bands and detections should be the only saturated
+things on screen. CARTO's `light_all` would be the obvious choice and now
+stamps "API KEY REQUIRED" across every tile, which only shows up in a
+screenshot.
+
+`/fires` is fetched on first open rather than on mount — it is a live run over
+the whole country and takes up to a minute cold, then ~10 s behind the API's
+15-minute cache. Stamps are UTC here, not Pacific: the view spans four time
+zones and UTC is the clock the satellite passes report in. Payload shape is in
+`../demo_data/README.md`.
+
 ## Offline preview
 
 `VITE_OFFLINE=true npm run dev` (or build) starts in explicit offline bundled mode with street tiles disabled. All overlay assets are bundled. The street basemap checkbox can independently disable tiles; no street basemap is bundled. Turning off tiles does not disable API calls in Backend demo or live mode.

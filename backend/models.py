@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 ReplayTime = Literal['T0', 'H1', 'H3', 'H6']
 
@@ -27,14 +27,28 @@ class PlanRequest(Model):
     household: Household = Field(default_factory=Household)
     t: ReplayTime = 'T0'
     mode: Literal['demo', 'replay', 'live'] = 'demo'
+    shelter_source: Literal['demo', 'fema'] = 'demo'
+
+
+class ShelterEntrance(Origin):
+    source_url: str = Field(min_length=1)
+    verified_at: AwareDatetime
 
 
 class Shelter(Origin):
     id: str
     name: str
-    accepts_pets: bool
-    accessible: bool
-    capacity: int = Field(ge=0)
+    accepts_pets: bool | None = None
+    accessible: bool | None = None
+    capacity: int | None = Field(default=None, ge=0)
+    source: Literal['demo', 'fema'] = 'demo'
+    status: Literal['DEMO', 'OPEN', 'CLOSED', 'FULL', 'ALERT', 'STANDBY', 'UNKNOWN'] = 'DEMO'
+    source_url: str | None = None
+    fetched_at: AwareDatetime | None = None
+    address: str = ''
+    reported_population: int | None = Field(default=None, ge=0)
+    pet_policy: str | None = None
+    entrance: ShelterEntrance | None = None
 
 
 class DataAsOf(Model):
@@ -55,7 +69,7 @@ class ExposureBreakdown(Model):
 
 
 class Route(Model):
-    type: Literal['recommended', 'fastest']
+    type: Literal['recommended', 'alternative', 'comparison']
     geometry: RouteGeometry
     travel_time_min: float = Field(ge=0)
     distance_km: float = Field(ge=0)
@@ -71,6 +85,7 @@ class PlanResponse(Model):
     destination: Shelter
     routes: list[Route]
     warnings: list[str]
+    evacuation: dict = Field(default_factory=dict)
 
 
 class GeocodeRequest(Model):

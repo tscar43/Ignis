@@ -4,7 +4,16 @@ Named for Evangelion's three supercomputers because they do the same job here.
 One model draws one line on a map with no error bar, which is the least honest
 thing a fire model can hand an evacuation planner. Three models with different
 dispositions give a core all of them agree on and a fringe only the pessimist
-claims, and that gap *is* the forecast uncertainty.
+claims.
+
+That gap is MODEL DISAGREEMENT, and it is not a forecast confidence interval.
+Three settings of one kernel sharing a seed, a wind field, a grid and a solver
+can only disagree about the things they were set up to disagree about; nothing
+here is calibrated against observed outcome frequency, so "the fire stays
+inside CONFIRMED x% of the time" is not a statement this file can support.
+`rothermel.py` exists because an independent kernel is what the spread would
+need to mean more than that. Say "the models disagree beyond here", not
+"we are 90% sure".
 
 The dispositions are not flavour -- each is a documented uncertainty in the
 inputs this engine already knows about:
@@ -134,7 +143,8 @@ def deliberate(scene: spread.Scene) -> dict[str, np.ndarray]:
             propensity=(scene.propensity if magus.use_fuel
                         else (scene.propensity > 0).astype("float32")),
             slope=scene.slope if magus.use_slope else None,
-            r0=R0_M_PER_MIN * magus.r0_gain)
+            r0=R0_M_PER_MIN * magus.r0_gain,
+            convergence_deg=scene.convergence)
         for magus in MAGI
     }
 
@@ -227,7 +237,10 @@ def score(seed_at: datetime, validate_at: datetime, bbox=DEMO_BBOX,
     arrivals = deliberate(scene)
     grids = {**arrivals, **consensus(arrivals)}
     truth, ignition = setup["truth"], setup["ignition"]
-    minutes = BANDS[setup["band"]]
+    # The window's real elapsed time. Scoring at BANDS[band] instead meant a
+    # 12 h observation gap was compared against a 6 h simulation -- see
+    # validate._predict, which had the same defect.
+    minutes = setup["horizon_min"]
 
     rows = {}
     for name, arrival in grids.items():

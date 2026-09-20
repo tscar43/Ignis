@@ -50,37 +50,55 @@ terrain visible, which the contract's consumers need.
 
 ## Palisades 2025: against the standard model, and against the fire
 
-`./.venv/Scripts/python.exe -m backend.fire.palisades`. Three windows over the
-first two days, R0 fitted once on the first and held for the other two. The
-comparator is `elliptical.py`, the Alexander/Finney ellipse FARSITE and the
-commercial tools built on it use, run through this engine's own solver on the
-same seed, wind and grid so the wind shape is the only difference. Growth IoU:
+`./.venv/Scripts/python.exe -m backend.fire.palisades`. Four windows over the
+fire's first three days, R0 fitted once on the first and held for the other
+three. The comparator is `elliptical.py`, the Alexander/Finney ellipse FARSITE
+and the commercial tools built on it use, run through this engine's own solver
+on the same seed, wind and grid so the wind shape is the only difference.
+Growth IoU:
 
 ```
-                              01-07 21:27Z   01-08 09:49Z   01-08 21:08Z
-                                  +12 h          +11 h          +12 h
-                                (fitted)       (held out)     (held out)
-  Ignis, wind^3 + fuel + slope     0.246          0.250          0.395
-  FARSITE-class ellipse            0.256          0.253          0.362
-  FARSITE-class, no fuel/slope     0.141          0.174          0.123
+                            01-07 21:27Z  01-08 09:49Z  01-08 21:08Z  01-09 09:30Z
+                                +12.0 h      +10.9 h       +12.0 h       +10.9 h
+                               (fitted)     (held out)    (held out)    (held out)
+  Ignis, wind^3 + fuel + slope   0.456        0.119         0.347         0.365
+  FARSITE-class ellipse          0.417        0.105         0.326         0.341
+  FARSITE-class, no fuel/slope   0.182        0.088         0.331         0.349
 ```
 
-- **Ignis and the standard ellipse are the same model to within noise** on the
-  two slow windows, 0.01 apart in the ellipse's favour. Ignis wins the third by
-  0.033, the window with the most growth to predict (29 -> 87 km2). Nothing
-  here supports a claim that either shape is better; say so.
-- **The fuel and slope terms carry real signal on this fire**, which is new.
-  Stripping them from the ellipse costs 0.11 to 0.24 growth IoU -- far more
-  than the wind shape is worth, and the opposite of the Camp and Dixie result
-  above. The difference is plausibly the terrain: Palisades ran through steep
-  chaparral canyons where Camp ran across ground the fuel term barely
-  distinguishes. This does not overturn the ablation, but it is the first
-  evidence the terms buy accuracy and not only legibility.
-- **Both models badly under-predict the second night.** 55 and 53 km2 against
-  87 km2 observed, with R0 fitted on the first night at 29 km/h and the second
-  night blowing 36. A single fitted R0 does not transfer across a change in
-  wind regime, which is the calibration weakness `spread.py` already warns
-  about in its R0 comment, now measured.
+**These numbers replace an earlier three-window table, and they are not a
+re-run of the same measurement.** `validate._setup` fetched a fixed two-day
+FIRMS span starting the day before the seed pass, so any window whose
+validation pass fell on the *next* UTC day never saw it: truth stopped at the
+seed pass and the model was scored against the fire's past. Two of the three
+windows, including the calibration one, were affected -- the fit window's
+truth was 13.4 km2 when the real footprint at 09:26Z was 72.0. The span is now
+derived from `validate_at`. Camp and Dixie are same-day windows and are
+unchanged by the fix, so the ablation table above still stands.
+
+- **Ignis edges the standard ellipse on every window**, by 0.014 to 0.039
+  growth IoU. Consistent in direction across four windows, but small, and
+  three of the four are within the spread you would expect from a different
+  choice of overpass. It is not evidence that the cubic wind term is better;
+  it is evidence the two are close.
+- **The fuel and slope terms do not carry the signal the old table showed.**
+  Stripping them costs 0.27 on the fit window and 0.03 on window 2, but on
+  windows 3 and 4 the stripped model is *ahead* of the full ellipse
+  (0.331 vs 0.326, 0.349 vs 0.341). The earlier claim that Palisades was the
+  first fire where the terms bought accuracy was an artifact of the truncated
+  truth. It goes back to matching Camp and Dixie: the terms buy legibility,
+  not IoU.
+- **Every model over-predicts area by roughly 2x on the held-out windows**,
+  174-235 km2 against 86-100 km2 observed. R0 is fitted to the first night, a
+  29 km/h window, and windows 2 and 3 blew 36-37. A single fitted R0 does not
+  transfer across a change in wind regime -- the calibration weakness
+  `spread.py` warns about in its R0 comment, now measured in the other
+  direction from before. Note the over-prediction is partly the truth mask:
+  detections only show actively burning pixels, so observed area is a floor.
+- **Window 2 is the weak one, at 0.119.** Its seed already covers 69 km2 of
+  the 86 km2 eventually observed, so there is very little growth left to get
+  right and growth IoU has almost nothing to divide by. Reported at the same
+  size as the rest, in the figure and in the UI.
 - **No comparison against an actual commercial prediction is possible.**
   Technosylva, Wildfire Analyst and the rest run under contract and publish no
   polygons for historical fires. `palisades.py` says this in its docstring, and
@@ -88,8 +106,10 @@ same seed, wind and grid so the wind shape is the only difference. Growth IoU:
   misreading that it is somebody's product.
 
 The figure is `demo_data/palisades_comparison.png`, regenerated by that
-command. Ground truth is the FIRMS footprint at the validation pass, with the
-NIFC final perimeter (23,448 acres, three weeks) drawn only for context.
+command. `--json` instead writes `demo_data/palisades_replay.json`, the same
+four windows as GeoJSON for the frontend's stepped replay tab. Ground truth is
+the FIRMS footprint at the validation pass, with the NIFC final perimeter
+(23,448 acres, three weeks) drawn only for context.
 
 ## Observation latency, measured on a live fire
 
@@ -199,36 +219,68 @@ reference**, median 0.495.
   up to 60% fast. It is now derived from live herbaceous moisture the way the
   reference does it: green at 120%, fully cured at 30%, linear between. One
   fewer knob.
-- **The mineral damping coefficient is deliberately not applied.** Rothermel
-  gives eta_s = 0.174 S_e^-0.19, which is 0.4174 at S_e = 0.01 -- a factor of
-  2.4 on reaction intensity. The reference does not appear to apply it, and
-  the arithmetic says the reference is right: reproducing its reaction
-  intensity for TL8 while keeping the coefficient demands a net fuel load of
-  0.578 lb/ft2, and TL8's whole oven-dry load is 0.381. No net loading can
-  exceed the load it comes from. Gamma' was checked two ways (imperial, and
-  GTR-371's metric reformulation) and is not the culprit. Unresolved between
-  the published equation and the reference implementation; matching the
-  implementation people actually fight fires with is the defensible side.
+- **The mineral damping coefficient is applied. It previously was not, on a
+  reason that turned out to be false.** Rothermel gives eta_s =
+  0.174 S_e^-0.19, which is 0.4174 at S_e = 0.01 -- a factor of 2.4 on
+  reaction intensity. This module omitted it, recording that the reference
+  does not appear to apply it either. The reference does apply it.
+  `surfaceFireReactionIntensity.cpp` in firelab/behave computes
+  `etaS_[i] = 0.174 / pow(weightedSilica[i], 0.19)`, caps it at 1.0, and
+  multiplies it into `reactionIntensityForLifeState_[i]`; and
+  `surfaceFuelbedIntermediates.cpp` builds its weighted load from
+  `loadDead_[i] * (1.0 - totalSilicaContent_)`. Both corrections, exactly as
+  Rothermel (1972) and Albini (1976) give them. The coefficient is now in.
 
-**After the fixes: every one of the 40 models agrees with the BehavePlus core
-to a constant 1.029, range 1.028-1.030.** Independent of wind speed, so the
-residual sits in the no-wind rate rather than the wind factor. Bulk density,
-characteristic SAV and packing ratio all match the reference exactly, so it is
-a single unidentified scalar rather than a structural difference. 2.9% is well
-inside the model's own uncertainty, and being constant it cancels out of every
-relative comparison -- which is all the ensemble asks of it. Pinned by a test
-so it cannot drift silently.
+  What is still unexplained is the arithmetic that justified leaving it out:
+  that reproducing the reference's TL8 reaction intensity with eta_s in place
+  needs a net load of 0.578 lb/ft2 against TL8's total oven-dry load of 0.381.
+  Gamma-prime was checked two ways and is not the culprit. The likeliest
+  explanation is a mismatched comparison setup, but the setup is not on disk
+  and the check cannot be repeated. Two published sources agreeing outweigh
+  one unreproducible internal reconciliation, which is why the code follows
+  them -- but treat this as open, not settled.
 
-Still worth knowing: agreement with BehavePlus is not agreement with a fire.
-This validates the implementation, not the physics.
+**WITHDRAWN: the "every one of the 40 models agrees with the BehavePlus core
+to a constant 1.029, range 1.028-1.030" result.** It was measured with mineral
+damping omitted, on the reasoning disproved above, and there is no reference
+rate table or runnable comparison checked into this repository to re-measure
+it against. It is not adjusted, scaled or re-derived here -- it is removed.
+
+What survives from that work and is still checked: every load, SAV, depth and
+extinction moisture against GTR-153 table 7, and characteristic SAV, bulk
+density and packing ratio against the published per-model pages.
+
+Re-establishing an agreement figure means committing a reference rate table
+and the script that compares against it. Until then, quote no ratio. And the
+old caveat still stands twice over: agreement with BehavePlus would validate
+the implementation, never the physics.
 
 ## Ground truth, and why the absolute numbers are low
 
+> **The ablation was re-measured on 2026-09-20** after the audit fixes
+> (midnight-crossing truth, true simulated horizon, grid-vs-true north).
+> Current growth IoU is in `validate.py`'s docstring; every number moved and
+> no conclusion did. Any other IoU in this document that is not marked as
+> re-measured still predates the fixes -- check before quoting it.
+
 Truth is the union of FIRMS detections up to the validation time, not a NIFC
-perimeter. A detection is an *actively burning* pixel, so cells that burned and
-cooled drop out and the observed footprint understates burned area. Absolute
-IoU is therefore pessimistic; the ablation is the honest comparison because the
-bias applies to every configuration equally.
+perimeter. A detection is an *actively burning* pixel.
+
+The usual statement of the limitation -- that cells which burned and cooled
+drop out -- is not quite right here, and saying it that way oversells the
+problem in one direction while hiding a real one. `validate.observed()`
+accumulates every detection up to the validation time, so a cell that burned
+and cooled is still in the mask that caught it burning. What is genuinely
+missed is fire that never coincided with an overpass at all. The footprint
+still understates burned area and absolute IoU is still pessimistic; the
+reason is coverage, not cooling.
+
+The ablation is a FAIR comparison -- every configuration meets the same
+imperfect mask -- but that is not the same as an unbiased one. A truth mask
+built from 375 m detection pixels can systematically favour one footprint
+shape over another, and the configurations differ precisely in shape. Shared
+bias makes the contest even; it does not prove the winner would still win
+against a perfect mask.
 
 ## Open, deliberately not started
 
@@ -238,10 +290,11 @@ bias applies to every configuration equally.
   moved unilaterally.
 - **GOES seeding is not validated against IoU**, for the reason above. The
   `PIXEL_M` constant is the open knob.
-- **No HTTP endpoint exists** anywhere in the repo. The brief asks for one, but
-  the backend teammate may want to own the app entry point, so ask first.
-  `risk_payload()` also refetches everything per call; an endpoint needs a TTL
-  cache to be usable live.
+- ~~**No HTTP endpoint exists** anywhere in the repo.~~ Out of date: the API
+  layer landed and this note did not move with it. `backend/main.py` serves
+  `/fire`, `/fires`, `/palisades` and the replay frames, with the TTL cache
+  this note asked for in `backend/api/fire_service.py`. Do not repeat the old
+  sentence in a pitch -- it was true for about a day.
 
 ## Session log
 
