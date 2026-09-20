@@ -114,8 +114,13 @@ def env_value(name: str) -> str:
     if not value:
         env = REPO_ROOT / ".env"
         if env.exists():
+            # `\s` matches newlines, so `\s*=\s*(.+?)\s*$` against an EMPTY
+            # value walked past the line break and captured the next setting's
+            # line whole -- an unset key silently returned the value of
+            # whatever was defined below it. Horizontal space only, and a
+            # value may not span lines.
             match = re.search(
-                rf"^\s*{re.escape(name)}\s*=\s*(.+?)\s*$",
+                rf"^[ \t]*{re.escape(name)}[ \t]*=[ \t]*([^\r\n]*)",
                 env.read_text(encoding="utf-8"),
                 re.MULTILINE,
             )
