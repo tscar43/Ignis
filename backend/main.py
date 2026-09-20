@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.chat import reply as chat_reply
+from .api.timeseries import DatabaseUnavailable, fires as stored_fires, growth
 from .api.evacuations import EvacuationsUnavailable, read_evacuations, origin_orders
 from .api.palisades_demo import (DemoUnavailable, PalisadesDemoRequest, PalisadesPlanResponse,
                                  ROUTING, demo_info, plan_demo)
@@ -195,6 +196,30 @@ def chat(request: ChatRequest, response: Response):
     # `plan` itself is handed over, not a copy of its body: the assistant then
     # routes through the same staleness, bbox and evacuation gates the map does.
     return chat_reply(request, plan)
+
+
+@app.get('/history')
+def history_index(response: Response):
+    """Which fires have stored history, and over what window."""
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        return stored_fires()
+    except DatabaseUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.get('/history/{fire_id}')
+def history(fire_id: str, response: Response):
+    """Burn intensity and modelled area over time, from TigerData.
+
+    Intensity comes from a continuous aggregate over the raw detections;
+    the band areas are the modelled series drawn against it.
+    """
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        return growth(fire_id)
+    except DatabaseUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @app.get('/evacuations')

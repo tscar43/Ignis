@@ -8,3 +8,4 @@ httpx>=0.27,<1
 pytest>=8,<10
 rasterio>=1.4,<2
 anthropic>=0.116,<1
+psycopg[binary]>=3.2,<4
