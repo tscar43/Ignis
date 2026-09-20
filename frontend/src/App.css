@@ -823,3 +823,78 @@ footer {
     width:100%
   }
 }
+.fire-history {
+  margin-top:24px;
+  background:#fff;
+  border:1px solid #dce3de;
+  border-radius:12px;
+  padding:22px 24px
+}
+.history-heading {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-bottom:6px
+}
+.history-heading h2 {
+  font-size:23px;
+  letter-spacing:-.6px;
+  margin:6px 0 0
+}
+.history-badge {
+  flex-shrink:0;
+  font-size:10px;
+  letter-spacing:1.2px;
+  font-weight:600;
+  color:#4a6b52;
+  border:1px solid #d4dfd2;
+  background:#f1f4ee;
+  border-radius:20px;
+  padding:5px 12px;
+  white-space:nowrap
+}
+.fire-history figure {
+  margin:18px 0 0
+}
+.fire-history figcaption {
+  font-size:11px;
+  letter-spacing:.6px;
+  font-weight:600;
+  text-transform:uppercase;
+  color:#62746a;
+  margin-bottom:4px
+}
+.fire-history svg {
+  width:100%;
+  height:auto;
+  display:block;
+  overflow:visible
+}
+.fire-history .grid {
+  stroke:#eef2ec;
+  stroke-width:1
+}
+.fire-history .tick {
+  font-size:10px;
+  fill:#8a9a90
+}
+.fire-history .series {
+  fill:none;
+  stroke-width:2;
+  stroke-linejoin:round;
+  stroke-linecap:round
+}
+.fire-history .direct-label {
+  font-size:11px;
+  font-weight:650
+}
+.history-note, .history-empty {
+  font-size:11px;
+  color:#62746a;
+  line-height:1.7;
+  margin:14px 0 0;
+  padding-top:12px;
+  border-top:1px solid #eef2ec
+}
