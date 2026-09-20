@@ -353,7 +353,10 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
     wind = (nws.live(lat, lon) if live_mode
             else nws.archived(lat, lon, seed_time, peak_window_h=peak_window_h))
 
-    codes, profile = landfire.fetch("fuel", bbox=bbox)
+    # Fuel vintage follows the moment being modelled, not a constant: live
+    # gets the newest, a replay gets the last one published before its fire.
+    codes, profile = landfire.fetch("fuel", bbox=bbox,
+                                    vintage=landfire.vintage_for(when))
     ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
     if perimeter is not None:
         ignition |= seed_from_perimeter(perimeter, profile["transform"], codes.shape)

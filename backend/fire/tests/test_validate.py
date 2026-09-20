@@ -96,7 +96,7 @@ def test_setup_fetches_truth_through_the_validation_day(monkeypatch):
                               sensor="VIIRS", source="VIIRS_SNPP_SP")]
 
     monkeypatch.setattr(firms, "fetch_many", fetch_many)
-    monkeypatch.setattr(landfire, "fetch", lambda layer, bbox=None: (
+    monkeypatch.setattr(landfire, "fetch", lambda layer, bbox=None, **kw: (
         np.zeros((4, 4), "int16"), {"transform": TRANSFORM}))
     monkeypatch.setattr(landfire, "fuel_factor",
                         lambda codes: np.ones((4, 4), "float32"))

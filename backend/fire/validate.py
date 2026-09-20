@@ -120,7 +120,8 @@ def _setup(seed_at: datetime, validate_at: datetime, bbox, peak_window_h: int):
     hotspots = firms.fetch_many(
         firms.ARCHIVE_SOURCES, bbox=bbox, start_date=start_date,
         days=(validate_at.date() - start_date).days + 1)
-    codes, profile = landfire.fetch("fuel", bbox=bbox)
+    codes, profile = landfire.fetch("fuel", bbox=bbox,
+                                    vintage=landfire.vintage_for(seed_at))
     transform, shape_ = profile["transform"], codes.shape
 
     seed = [h for h in hotspots if h.acq_time == seed_at]

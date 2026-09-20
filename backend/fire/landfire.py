@@ -37,13 +37,30 @@ SERVICES = {
     "aspect": "Landfire_Topo/LF2020_Asp_CONUS",  # downslope direction
 }
 
-# Fuel vintages this module knows how to ask for. Terrain is not reissued per
-# vintage the way fuel is, so slope and aspect stay on the LF2020 topo layers.
+# Fuel vintages this module knows how to ask for, all three confirmed against
+# the live service. Terrain is not reissued per vintage the way fuel is, so
+# slope and aspect stay on the LF2020 topo layers.
 FUEL_SERVICES = {
     "LF2016": "Landfire_LF2016/LF2016_FBFM40_CONUS",
     "LF2022": "Landfire_LF2022/LF2022_FBFM40_CONUS",
     "LF2023": "Landfire_LF2023/LF2023_FBFM40_CONUS",
 }
+
+
+def vintage_for(when=None) -> str:
+    """The fuel vintage to model `when` with. None (live) means the newest.
+
+    A replay wants the last vintage published BEFORE its fire, so the model is
+    not handed fuel the fire itself removed -- the reason Camp 2018 runs on
+    LF2016. That rule was a comment next to a constant rather than code, which
+    is how a 2025 fire ended up being modelled on 2016 vegetation: nobody was
+    going to remember to switch it per run.
+    """
+    if when is None:
+        return max(FUEL_SERVICES, key=lambda v: int(v[2:]))
+    earlier = [v for v in FUEL_SERVICES if int(v[2:]) < when.year]
+    return max(earlier, key=lambda v: int(v[2:])) if earlier else min(
+        FUEL_SERVICES, key=lambda v: int(v[2:]))
 
 _to_albers = Transformer.from_crs("EPSG:4326", CRS, always_xy=True)
 

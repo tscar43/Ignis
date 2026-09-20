@@ -192,8 +192,8 @@ def _stub_layers(monkeypatch, shape=(4, 4)):
         return np.zeros(shape_, dtype=bool)
 
     monkeypatch.setattr(landfire, "fetch",
-                        lambda layer, bbox=None: (np.full(shape, 101, "int16"),
-                                                  {"transform": transform}))
+                        lambda layer, bbox=None, **kw: (np.full(shape, 101, "int16"),
+                                                        {"transform": transform}))
     monkeypatch.setattr(landfire, "fuel_factor",
                         lambda codes: np.ones(shape, "float32"))
     monkeypatch.setattr(spread.terrain, "slope_factors",
