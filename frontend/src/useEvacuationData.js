@@ -13,12 +13,12 @@ const offline = {
   loading: false,
 }
 
-export default function useEvacuationData(mode, revision) {
+export default function useEvacuationData(mode, revision, enabled = true) {
   const key = `${mode}:${revision}`
   const [result, setResult] = useState(null)
 
   useEffect(() => {
-    if (mode === 'offline') return
+    if (!enabled || mode === 'offline') return
     const controller = new AbortController()
     let cancelled = false
     let timedOut = false
@@ -56,8 +56,9 @@ export default function useEvacuationData(mode, revision) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [mode, key])
+  }, [mode, key, enabled])
 
+  if (!enabled) return { loading: false, fire: null, plan: null }
   if (mode === 'offline') return offline
   return result?.key === key ? result : { loading: true, fire: null, plan: null }
 }

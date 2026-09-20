@@ -369,6 +369,7 @@ footer {
 }
 .view-tabs {
   display:flex;
+  flex-wrap:wrap;
   gap:8px;
   margin:0 0 18px
 }
@@ -684,3 +685,23 @@ button:focus-visible, select:focus-visible { outline: 3px solid #bd642e; outline
 .exposure-method p { margin-top: 8px; }
 .timestamps > span { max-width: 100%; }
 @media (max-width: 560px) { .data-controls label { flex-wrap: wrap; } }
+
+.household-form { padding: 20px 0; }
+.household-form fieldset { display: flex; flex-wrap: wrap; gap: 16px; border: 1px solid #9cb3a8; border-radius: 8px; margin-bottom: 12px; padding: 16px; }
+.household-form label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.household-form input[type=number] { width: 90px; padding: 6px; }
+.household-form p, .demo-catalogue p { margin: 10px 0; }
+.demo-catalogue { margin-bottom: 20px; font-size: 13px; }
+
+.household-intake { margin: 24px 0 0; padding: 20px; border: 1px solid #cbd8cf; border-radius: 10px; background: #fff; }
+.household-intake > p { font-size: 13px; margin: 12px 0; }
+.household-messages { max-height: 300px; overflow-y: auto; overflow-wrap: anywhere; }
+.intake-message { padding: 12px; margin: 8px 0; border-radius: 8px; background: #edf3ee; }
+.intake-message.user { background: #f4f2e9; }
+.intake-composer { display: grid; gap: 8px; margin-top: 16px; }
+.intake-composer textarea { width: 100%; resize: vertical; font: inherit; padding: 12px; border: 1px solid #9cb3a8; border-radius: 6px; }
+.intake-composer button { justify-self: start; }
+.constraint-fields { display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; border: 0; padding: 12px 0; }
+.constraint-field { display: grid; gap: 6px; padding: 12px; border: 1px solid #b7cbbd; border-radius: 12px; background: #f3f7f2; font-size: 13px; max-width: 100%; }
+.constraint-field input { width: 100px; font: inherit; padding: 8px; }
+.constraint-field select { max-width: 100%; }

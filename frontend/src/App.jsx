@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Map from './components/Map'
 import NationalView from './components/NationalView'
 import PalisadesView from './components/PalisadesView'
+import PalisadesEvacuation from './components/PalisadesEvacuation'
 import LayerControls from './components/LayerControls'
 import RoutePanel from './components/RoutePanel'
 import useEvacuationData from './useEvacuationData'
@@ -34,16 +35,16 @@ async function json(path, signal) {
 const linked = new URLSearchParams(window.location.search).get('fire')
 
 function App() {
+  const [view, setView] = useState(linked ? 'national' : import.meta.env.VITE_OFFLINE === 'true' ? 'scenario' : 'palisades-demo')
   const [mode, setMode] = useState(import.meta.env.VITE_OFFLINE === 'true' ? 'offline' : 'demo')
   const [revision, setRevision] = useState(0)
   const [layers, setLayers] = useState({ active: true, spread: true, recommended: true, alternative: true, fuel: false, wind: true })
   const [basemap, setBasemap] = useState(import.meta.env.VITE_OFFLINE !== 'true')
-  const data = useEvacuationData(mode, revision)
+  const data = useEvacuationData(mode, revision, view === 'scenario')
   const { fire, plan, loading } = data
   const refresh = () => setRevision(value => value + 1)
   const retry = <button type="button" onClick={refresh}>Retry requests</button>
 
-  const [view, setView] = useState(linked ? 'national' : 'scenario')
   const [national, setNational] = useState(null)
   const [nationalError, setNationalError] = useState(null)
   const [palisades, setPalisades] = useState(null)
@@ -77,17 +78,17 @@ function App() {
     const name = view === 'national' ? chosen?.incident.name ?? chosen?.incident.id : null
     document.title = name ? `${name} · Ignis` : 'Ignis · Evacuation intelligence'
   }, [view, selected, chosen])
-  const tab = key => <button type="button" className={view === key ? 'active' : undefined} aria-pressed={view === key} onClick={() => setView(key)}>{{ scenario: 'Evacuation scenario', national: 'Live · every US fire', palisades: 'Palisades · model vs. truth' }[key]}</button>
+  const tab = key => <button type="button" className={view === key ? 'active' : undefined} aria-pressed={view === key} onClick={() => setView(key)}>{{ 'palisades-demo': 'Palisades · household demo', scenario: 'Evacuation scenario', national: 'Live · every US fire', palisades: 'Palisades · model vs. truth' }[key]}</button>
 
   return <>
     <header className="app-header">
       <a className="brand" href="#main"><span aria-hidden="true">◈</span> ignis<span className="brand-caption">EVACUATION INTELLIGENCE</span></a>
-      <span className="demo-badge">{view === 'national' ? 'Live national feed' : view === 'palisades' ? 'Historical validation' : mode === 'live' ? 'Live fire' : 'Demo workspace'}</span>
+      <span className="demo-badge">{view === 'national' ? 'Live national feed' : view === 'palisades-demo' ? 'Historical household demo' : view === 'palisades' ? 'Historical validation' : mode === 'live' ? 'Live fire' : 'Demo workspace'}</span>
     </header>
     <main id="main">
-      <div className="page-heading"><div><p className="eyebrow">{{ scenario: 'BUTTE COUNTY, CALIFORNIA', national: 'CONTIGUOUS UNITED STATES · LIVE', palisades: 'LOS ANGELES COUNTY · 7–9 JANUARY 2025' }[view]}</p><h1>A clearer view of what’s ahead.</h1><p>{{ scenario: 'Explore projected fire risk and compare evacuation options.', national: 'Every fire burning right now, run through the same spread model.', palisades: 'The same model, seeded from satellite truth and scored against what actually burned.' }[view]}</p></div><span className="scenario-label">{{ scenario: <>Fictional scenario<br /><strong>Concow / Paradise</strong></>, national: <>Live satellite data<br /><strong>NASA FIRMS · GOES · NIFC · HRRR</strong></>, palisades: <>Historical validation<br /><strong>Palisades Fire · VIIRS ground truth</strong></> }[view]}</span></div>
-      <div className="view-tabs" role="group" aria-label="Choose a view">{tab('scenario')}{tab('national')}{tab('palisades')}</div>
-      {view === 'palisades' ? <>
+      <div className="page-heading"><div><p className="eyebrow">{{ 'palisades-demo': 'PALISADES · HISTORICAL DEMONSTRATION', scenario: 'BUTTE COUNTY, CALIFORNIA', national: 'CONTIGUOUS UNITED STATES · LIVE', palisades: 'LOS ANGELES COUNTY · 7–9 JANUARY 2025' }[view]}</p><h1>A clearer view of what’s ahead.</h1><p>{{ 'palisades-demo': 'Match household requirements to fictional demo destinations, then request a driving route.', scenario: 'Explore projected fire risk and compare evacuation options.', national: 'Every fire burning right now, run through the same spread model.', palisades: 'The same model, seeded from satellite truth and scored against what actually burned.' }[view]}</p></div><span className="scenario-label">{{ 'palisades-demo': <>Historical scenario<br /><strong>Fictional destinations</strong></>, scenario: <>Fictional scenario<br /><strong>Concow / Paradise</strong></>, national: <>Live satellite data<br /><strong>NASA FIRMS · GOES · NIFC · HRRR</strong></>, palisades: <>Historical validation<br /><strong>Palisades Fire · VIIRS ground truth</strong></> }[view]}</span></div>
+      <div className="view-tabs" role="group" aria-label="Choose a view">{tab('palisades-demo')}{tab('scenario')}{tab('national')}{tab('palisades')}</div>
+      {view === 'palisades-demo' ? <PalisadesEvacuation basemap={basemap} onBasemap={setBasemap} /> : view === 'palisades' ? <>
         {palisadesError && <p className="route-warning" role="alert">Palisades replay unavailable — {palisadesError}. No fictional data is shown in its place. <button type="button" onClick={() => setPalisadesError(null)}>Retry Palisades</button></p>}
         {!palisades ? !palisadesError && <p role="status">Loading the Palisades replay…</p> : <PalisadesView data={palisades} basemap={basemap} onBasemap={setBasemap} />}
       </> : view === 'national' ? <>
