@@ -10,6 +10,35 @@ Daniel owns this implementation under the frontend / AI-agent role brief. Start 
 4. Pending: Backend `/fire` and `/plan` endpoint URL, request contract, and real routing service. There is no API entry point in this checkout. Verify real FIRMS points and a real backend route on one map before starting milestone 5.
 5–9. Pending in the requested order: stub chat, extraction and editable chips, backend agent tools, scenario replay, polish and three full demo rehearsals. No AI connection has been added ahead of the real-route checkpoint.
 
+## Live national view
+
+A second tab, `Live · every US fire`, draws `GET /fires`: every fire currently
+burning in the contiguous US, each with the same cumulative bands as the
+scenario view. Added by Justin alongside the engine change that produced the
+endpoint; the scenario view and its components are untouched apart from the
+band palette moving to `src/bands.js` so both maps can import it.
+
+The view is built around the things a fire map has to answer at a glance, and
+most of them were borrowed from studying mapofire.com: markers sized by the
+fire's reported acreage, satellite detections coloured by how old the
+observation is (under 12 h / 12-24 h / over 24 h), every timestamp shown as
+"7 h ago" with the absolute UTC stamp on hover, and a detail panel per fire
+with status, containment, the modeled +1/+3/+6h areas and a "how fresh is
+this" block. Selecting a fire sets `?fire=<id>` and the tab title, so a link
+opens on that fire.
+
+The basemap is Esri's Light Gray Canvas, base plus labels. It is desaturated
+on purpose -- the risk bands and detections should be the only saturated
+things on screen. CARTO's `light_all` would be the obvious choice and now
+stamps "API KEY REQUIRED" across every tile, which only shows up in a
+screenshot.
+
+`/fires` is fetched on first open rather than on mount — it is a live run over
+the whole country and takes up to a minute cold, then ~10 s behind the API's
+15-minute cache. Stamps are UTC here, not Pacific: the view spans four time
+zones and UTC is the clock the satellite passes report in. Payload shape is in
+`../demo_data/README.md`.
+
 ## Offline preview
 
 Run `VITE_OFFLINE=true npm run dev` or `VITE_OFFLINE=true npm run build` to disable external map tiles by default. All fire, route and fuel assets are bundled locally. The street basemap checkbox can also disable tiles. There is no bundled street map: overlays remain available on a neutral background offline. Tile failures display a visible notice.

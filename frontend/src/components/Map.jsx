@@ -3,8 +3,8 @@ import { CircleMarker, GeoJSON, ImageOverlay, MapContainer, Pane, TileLayer, Too
 import 'leaflet/dist/leaflet.css'
 import fuel from '../../../demo_data/fuel_overlay.json'
 import fuelImage from '../../../demo_data/fuel_overlay.png'
+import { bands } from '../bands'
 
-const bands = [['h6', '#e9b949', 0.15], ['h3', '#e88936', 0.25], ['h1', '#dc503c', 0.35], ['current', '#962f32', 0.6]]
 export default function Map({ fire, plan, layers, basemap }) {
   const [tileError, setTileError] = useState(false)
   const recommended = plan.routes.find(route => route.type === 'recommended')

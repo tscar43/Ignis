@@ -3,7 +3,8 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.fire_service import FireUnavailable, get_fire_result
+from .api.fire_service import (FireUnavailable, get_fire_result,
+                               get_national_result, get_palisades_replay)
 from .models import (ChatRequest, GeocodeRequest, Household, Origin,
                      PlanRequest, PlanResponse, ReplayTime, Shelter)
 from .routing.routes import calculate_routes
@@ -40,6 +41,35 @@ def fire(response: Response, mode: Literal['demo', 'replay', 'live'] = 'demo',
          t: ReplayTime = 'T0'):
     """Fixed engine area; mode explicitly selects demo, historical replay, or live."""
     return fire_for_time(mode, t, response)
+
+
+@app.get('/fires', response_model=None)
+def fires(response: Response):
+    """Every wildfire currently burning in CONUS, each with its own risk bands.
+
+    `/fire` is one engine area; this is the national sweep. Cached longer --
+    see fire_service.national_cache -- and the cache headers say how old it is.
+    """
+    try:
+        result = get_national_result()
+    except FireUnavailable as exc:
+        raise HTTPException(503, str(exc), headers={'Retry-After': '30'}) from exc
+    response.headers['X-Fire-Source'] = 'live-national'
+    response.headers['X-Fire-Stale'] = str(result.stale).lower()
+    response.headers['X-Fire-Cache-Age'] = str(result.age_seconds)
+    response.headers['Cache-Control'] = 'no-store'
+    return result.payload
+
+
+@app.get('/palisades', response_model=None)
+def palisades():
+    """Stepped model-vs-truth replay of the January 2025 Palisades Fire.
+
+    A static fixture, not a live run: the tab is presented in front of people
+    and must not wait on a FIRMS round trip. Regenerate it with
+    `python -m backend.fire.palisades --json`.
+    """
+    return get_palisades_replay()
 
 
 @app.get('/shelters', response_model=list[Shelter])

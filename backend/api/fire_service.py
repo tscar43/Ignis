@@ -30,6 +30,23 @@ def live_loader():
     return risk_payload()
 
 
+def national_loader():
+    from backend.fire.national import national_payload
+    return national_payload()
+
+
+def checked_national(payload):
+    """The national payload is a list of contract payloads, so validate each.
+
+    The engine already contract-checks every fire before returning it; this is
+    the same guard the single-fire path keeps, at the boundary where a bad
+    payload would otherwise reach the UI.
+    """
+    for fire in payload['fires']:
+        checked(fire)
+    return payload
+
+
 @dataclass(frozen=True)
 class FireResult:
     payload: dict
@@ -39,8 +56,10 @@ class FireResult:
 
 
 class LiveFireCache:
-    def __init__(self, loader=live_loader, ttl=300, retry_delay=30, clock=monotonic):
+    def __init__(self, loader=live_loader, ttl=300, retry_delay=30, clock=monotonic,
+                 checker=checked):
         self.loader, self.ttl, self.retry_delay, self.clock = loader, ttl, retry_delay, clock
+        self.checker = checker
         self._lock = Lock()
         self._state = None
         self._retry_at = 0.0
@@ -68,7 +87,7 @@ class LiveFireCache:
                     raise FireUnavailable('Live fire data is temporarily unavailable')
                 return self._result(now)
             try:
-                payload = deepcopy(checked(self.loader()))
+                payload = deepcopy(self.checker(self.loader()))
             except Exception:
                 self._retry_at = self.clock() + self.retry_delay
                 logger.warning('Live fire refresh failed; retaining last good payload', exc_info=True)
@@ -94,6 +113,28 @@ def _replay():
 
 
 live_cache = LiveFireCache()
+
+# A national run models a dozen fires against LANDFIRE, HRRR and GOES, so it
+# costs ~40 s cold and the satellite passes behind it are hours apart. A
+# 5-minute TTL would just refetch the same answer.
+national_cache = LiveFireCache(loader=national_loader, ttl=900,
+                               checker=checked_national)
+
+
+def get_national_result():
+    """Every active CONUS fire, modelled. Same cache and staleness rules as live."""
+    return national_cache.get()
+
+
+@lru_cache(maxsize=1)
+def get_palisades_replay():
+    """The Palisades model-vs-truth fixture, read once and served unchanged.
+
+    Not a contract payload -- it is windows of masks and scores, not risk
+    bands -- so `checked` does not apply and there is nothing to deep-copy
+    for: the route only reads it.
+    """
+    return json.loads((DATA_DIR / 'palisades_replay.json').read_text(encoding='utf-8'))
 
 
 def get_fire_result(mode='demo', t='T0'):

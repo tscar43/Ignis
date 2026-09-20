@@ -367,6 +367,236 @@ footer {
   border-top:1px solid #d4ded1;
   color:#455d4f
 }
+.view-tabs {
+  display:flex;
+  gap:8px;
+  margin:0 0 18px
+}
+.view-tabs button {
+  font:inherit;
+  font-size:11px;
+  letter-spacing:.8px;
+  text-transform:uppercase;
+  padding:9px 16px;
+  border:1px solid #dae2d9;
+  border-radius:999px;
+  background:#fff;
+  color:#48584f;
+  cursor:pointer
+}
+.view-tabs button.active {
+  background:#146b70;
+  border-color:#146b70;
+  color:#fff
+}
+.incident-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+  margin-top:14px
+}
+.incident-table th,.incident-table td {
+  text-align:left;
+  padding:8px 10px;
+  border-bottom:1px solid #edf0ec;
+  white-space:nowrap
+}
+.incident-table thead th {
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  color:#69776f;
+  font-weight:700
+}
+.incident-table tbody tr.selected {
+  background:#f2f7f2
+}
+.incident-table tbody th button {
+  font:inherit;
+  font-weight:700;
+  color:#146b70;
+  background:none;
+  border:0;
+  padding:0;
+  cursor:pointer;
+  text-decoration:underline
+}
+
+.incident-table tbody th small {
+  display:block;
+  font-weight:400;
+  font-size:10px;
+  color:#8b978f;
+  letter-spacing:.3px
+}
+.badge-perimeter {
+  display:inline-block;
+  margin-left:8px;
+  padding:1px 7px;
+  border-radius:999px;
+  background:#e7f1e9;
+  color:#146b70;
+  font-size:10px;
+  letter-spacing:.4px;
+  text-transform:uppercase
+}
+.unmatched {
+  color:#8b978f;
+  font-style:italic
+}
+
+.legend-sub {
+  display:block;
+  margin-top:8px
+}
+.map-legend i.dot {
+  border-radius:50%
+}
+.incident-table td small {
+  display:block;
+  font-size:10px;
+  color:#8b978f
+}
+.incident-table td small.contained {
+  color:#a4713a
+}
+.excluded-note {
+  margin:14px 0 0;
+  padding:10px 12px;
+  background:#f4f6f3;
+  border-left:3px solid #c9d3c7;
+  font-size:11px;
+  color:#5c6b62;
+  line-height:1.5
+}
+.detail-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px
+}
+.detail-head h2 {
+  margin:2px 0 4px
+}
+.detail-where {
+  font-size:12px;
+  color:#69776f;
+  margin:0
+}
+.detail-close {
+  font:inherit;
+  font-size:20px;
+  line-height:1;
+  background:none;
+  border:0;
+  color:#8b978f;
+  cursor:pointer;
+  padding:2px 6px
+}
+.detail-section {
+  margin:22px 0 10px;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:1.4px;
+  color:#69776f
+}
+.detail-section small {
+  text-transform:none;
+  letter-spacing:0;
+  color:#a3ada6
+}
+.stat-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:14px
+}
+.stat-grid.projection {
+  grid-template-columns:repeat(4,1fr);
+  gap:6px
+}
+.stat {
+  background:#f4f6f3;
+  border-radius:8px;
+  padding:10px 12px
+}
+.stat-label {
+  display:block;
+  font-size:9px;
+  text-transform:uppercase;
+  letter-spacing:1.2px;
+  color:#7d8b83;
+  margin-bottom:5px
+}
+.stat-value {
+  font-size:17px;
+  font-weight:700;
+  color:#25352c;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex-wrap:wrap
+}
+.stat-grid.projection .stat-value {
+  font-size:15px
+}
+.stat-value small {
+  font-size:10px;
+  font-weight:400;
+  color:#69776f
+}
+.stat-value .muted {
+  font-size:12px;
+  font-weight:400;
+  color:#8b978f
+}
+.chip.active {
+  background:#bd3926;
+  color:#fff;
+  font-size:10px;
+  letter-spacing:1px;
+  padding:3px 9px;
+  border-radius:999px
+}
+.bar {
+  flex:1;
+  min-width:44px;
+  height:7px;
+  border-radius:4px;
+  background:#dde3da;
+  display:block;
+  overflow:hidden
+}
+.bar i {
+  display:block;
+  height:100%;
+  background:#bd3926
+}
+.field {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin:0;
+  padding:7px 0;
+  border-bottom:1px solid #edf0ec;
+  font-size:12px
+}
+.field span {
+  color:#69776f
+}
+.field strong {
+  text-align:right
+}
+.detail-note {
+  font-size:11px;
+  color:#69776f;
+  line-height:1.55;
+  margin:10px 0 0
+}
+.context-panel.detail h3 {
+  margin-top:0
+}
+
 @media(min-width:1600px) {
   .leaflet-container {
     height:520px
@@ -378,6 +608,14 @@ footer {
   }
   .context-panel {
     display:none
+  }
+  /* The aside is decorative when it explains the view and essential when it
+     is a fire's details, so only the explainer folds away. */
+  .context-panel.detail {
+    display:block
+  }
+  .route-panel {
+    overflow-x:auto
   }
   .brand-caption {
     display:none

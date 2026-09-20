@@ -76,7 +76,13 @@ def nws_gridpoint(lat: float, lon: float) -> Wind:
     """NWS gridpoint wind. Two hops: /points then the gridpoint URL."""
     with httpx.Client(headers=HEADERS, timeout=60) as client:
         point = client.get(f"{NWS}/points/{lat},{lon}").json()
-        grid = client.get(point["properties"]["forecastGridData"]).json()["properties"]
+        body = point.get("properties")
+        if not body or "forecastGridData" not in body:
+            # A throttled or erroring NWS answers 200 with a problem document,
+            # and indexing it blind raises KeyError('properties') three frames
+            # deep, which says nothing about which service failed.
+            raise RuntimeError(f"NWS gridpoint lookup failed for {lat},{lon}")
+        grid = client.get(body["forecastGridData"]).json()["properties"]
     speed = _covering(grid["windSpeed"]["values"])
     direction = _covering(grid["windDirection"]["values"])
     # validTime is an interval, "2026-09-19T12:00:00+00:00/PT3H"; keep the start.

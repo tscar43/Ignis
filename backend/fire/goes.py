@@ -30,7 +30,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-from .firms import CACHE_DIR, DEMO_BBOX, Hotspot
+from .firms import CACHE_DIR, DEMO_BBOX, Hotspot, cache_write
 
 # GOES-West sees the western US, GOES-East the rest. FDCC is the CONUS sector,
 # scanned every 5 minutes; FDCF is full disk at 10 and FDCM mesoscale at 1.
@@ -103,9 +103,8 @@ def fetch(bbox=DEMO_BBOX, when: datetime | None = None) -> list[Hotspot]:
     # ponytail: nothing prunes cache/; ~280 KB per frame, and it is gitignored.
     path = CACHE_DIR / key.rsplit("/", 1)[-1]
     if not path.exists():
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(httpx.get(f"https://{bucket}.s3.amazonaws.com/{key}",
-                                   timeout=90).content)
+        cache_write(path, httpx.get(f"https://{bucket}.s3.amazonaws.com/{key}",
+                                    timeout=90).content)
 
     with rasterio.open(f'netcdf:"{path}":Mask') as dataset:
         mask, transform, crs = dataset.read(1), dataset.transform, dataset.crs

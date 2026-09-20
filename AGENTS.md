@@ -16,7 +16,7 @@ modelling rules this file does not repeat.
 | `demo_data/` | Justin — these are generated outputs | **do not edit**, do not hand-edit the JSON |
 | `contracts/` | shared, currently empty | needs all three to agree |
 | backend API / app entry point | backend agent (this session) | see backend/api/AGENTS.md |
-| frontend / map | unclaimed | — |
+| frontend / map | Daniel, per `frontend/README.md` | ask first — Justin added the national view tab (`NationalMap.jsx`) and the Palisades validation tab (`PalisadesView.jsx`); both are additive, App.jsx gained a third `view` arm and nothing else moved |
 | `.gitignore`, `.vscode/`, `.mcp.json`, root `README.md` | shared | add to them, don't rewrite them |
 
 Unclaimed areas are genuinely unclaimed: claim one by adding a row, and add
@@ -51,10 +51,17 @@ from backend.fire.spread import risk_payload
 risk_payload()
 ```
 
-There is **no HTTP endpoint yet**, deliberately. Whoever owns the app entry
-point should own it. `risk_payload()` refetches everything per call, so it
-needs a TTL cache in front of it before it is usable live. Ask before building
-it into `backend/fire/` — it more likely belongs in the API layer.
+Three HTTP endpoints now exist. Two are live, in the API layer with a TTL
+cache in front: `GET /fire` for the fixed engine area, and `GET /fires` for
+every fire currently burning in the contiguous US. The third, `GET /palisades`,
+reads a static fixture and never touches the network -- it is the model-vs-truth
+replay of the January 2025 Palisades Fire, shape in `demo_data/README.md`,
+regenerated with `python -m backend.fire.palisades --json`. The national sweep is
+`backend/fire/national.py` — one FIRMS query, clustered into incidents, one
+`risk_payload()` per incident in a process pool, joined to NIFC WFIGS for
+official names, acreage, containment and -- where an agency has mapped one --
+the perimeter the model seeds from. Its payload shape is in
+[demo_data/README.md](demo_data/README.md); the frontend's second tab draws it.
 
 ## Rules that hold everywhere
 

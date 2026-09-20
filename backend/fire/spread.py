@@ -147,6 +147,28 @@ def seed_from_hotspots(hotspots, transform, shape_):
     return mask
 
 
+def seed_from_perimeter(geometry: dict, transform, shape_) -> np.ndarray:
+    """Ignition mask from an official perimeter, rasterized onto the grid.
+
+    A WFIGS perimeter is the mapped burned area, usually from an overnight IR
+    flight. Satellite pixels mark where the fire is *hottest*, which is not the
+    same as where its edge is, so the two seeds answer different questions and
+    the caller unions them: the perimeter says how big the fire already is, the
+    fresh detections say how far it has run since the flight.
+
+    Seeding the whole footprint does not double-project it. Arrival time is a
+    minimum over paths, so a cell inside the envelope contributes nothing; only
+    the outer edge can move. A perimeter larger than the model grid is clipped
+    by the rasterization, which is the same span cap `national.py` documents.
+    """
+    to_albers = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True).transform
+    projected = shapely_transform(to_albers, shape(geometry))
+    burned = rasterio.features.rasterize(
+        [(projected, 1)], out_shape=shape_, transform=transform, fill=0,
+        all_touched=True)  # all_touched: a sliver of perimeter still counts
+    return burned.astype(bool)
+
+
 def bands_to_geojson(arrival: np.ndarray, transform, simplify_m: float = 60.0,
                      close_m: float = 150.0, ndigits: int = 6) -> dict:
     """The contract's `risk_polygons`, cumulative and in EPSG:4326.
@@ -227,19 +249,28 @@ class Scene:
 
 
 def gather(bbox=DEMO_BBOX, when: datetime | None = None,
-           peak_window_h: int = 8) -> Scene:
+           peak_window_h: int = 8, hotspots: list | None = None,
+           perimeter: dict | None = None) -> Scene:
     """Everything a spread model needs for `bbox` at `when` (None = live).
 
     Both derived layers are always built -- the rasters are disk-cached, and a
     model that wants the wind-only baseline just passes None to arrival_times.
+
+    `hotspots` supplies detections already in hand instead of fetching them.
+    `national.py` clusters one CONUS query into incidents and hands each its
+    own members, which is one FIRMS request for the country rather than one
+    per fire. `perimeter` is an official WFIGS footprint, unioned into the
+    seed -- see `seed_from_perimeter`.
     """
     live_mode = when is None
-    hotspots = firms.fetch_many(
-        firms.LIVE_SOURCES if live_mode else firms.ARCHIVE_SOURCES, bbox=bbox,
-        # Replay starts a day early: at 01:50 the newest pass is still
-        # yesterday evening's, and fetching only `when`'s date would miss it.
-        start_date=None if live_mode else when.date() - timedelta(days=1),
-        days=1 if live_mode else 2)
+    if hotspots is None:
+        # Both paths ask for two days and keep the newest pass. Replay starts a
+        # day early because at 01:50 the newest pass is still yesterday
+        # evening's; live does the same because NRT's "latest" is today in UTC
+        # and today is empty until the first pass of the day is published.
+        hotspots = (firms.fetch_live(bbox) if live_mode else firms.fetch_many(
+            firms.ARCHIVE_SOURCES, bbox=bbox,
+            start_date=when.date() - timedelta(days=1), days=2))
 
     # Seed from one satellite pass, not all of them: older detections are
     # already-burned area, and seeding them projects the fire twice. Replay
@@ -274,8 +305,11 @@ def gather(bbox=DEMO_BBOX, when: datetime | None = None,
             else nws.archived(lat, lon, seed_time, peak_window_h=peak_window_h))
 
     codes, profile = landfire.fetch("fuel", bbox=bbox)
+    ignition = seed_from_hotspots(seed, profile["transform"], codes.shape)
+    if perimeter is not None:
+        ignition |= seed_from_perimeter(perimeter, profile["transform"], codes.shape)
     return Scene(
-        ignition=seed_from_hotspots(seed, profile["transform"], codes.shape),
+        ignition=ignition,
         codes=codes,
         propensity=landfire.fuel_factor(codes),
         slope=terrain.slope_factors(landfire.fetch("slope", bbox=bbox)[0],
@@ -305,13 +339,15 @@ def assemble(scene: Scene, bands: dict, arrival: np.ndarray) -> dict:
 
 def risk_payload(bbox=DEMO_BBOX, when: datetime | None = None,
                  use_fuel: bool = True, use_slope: bool = True,
-                 peak_window_h: int = 8) -> dict:
+                 peak_window_h: int = 8, hotspots: list | None = None,
+                 perimeter: dict | None = None) -> dict:
     """The whole contract, in one call. This is what the endpoint returns.
 
     `when=None` is live: NRT hotspots and current NWS wind. A datetime is
     replay: the SP archive and reanalysis wind for that hour.
     """
-    scene = gather(bbox=bbox, when=when, peak_window_h=peak_window_h)
+    scene = gather(bbox=bbox, when=when, peak_window_h=peak_window_h,
+                   hotspots=hotspots, perimeter=perimeter)
     arrival = arrival_times(
         scene.ignition, scene.wind.speed_kmh, scene.wind.toward_deg,
         cell_m=scene.cell_m,

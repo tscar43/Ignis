@@ -16,8 +16,9 @@ import hashlib
 import io
 import os
 import re
+import threading
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -25,6 +26,29 @@ import httpx
 BASE = "https://firms.modaps.eosdis.nasa.gov/api"
 CACHE_DIR = Path(__file__).resolve().parent / "cache"  # gitignored
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def cache_write(path: Path, data: bytes | str) -> None:
+    """Write into cache/ atomically, via a temp file and a rename.
+
+    `national.py` models several incidents in parallel and they share this
+    directory. A half-written tile read by another thread fails inside
+    rasterio, looking exactly like a corrupt service response.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.part")
+    part.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
+    try:
+        os.replace(part, path)
+    except OSError:
+        # Windows refuses the rename while another thread holds the
+        # destination open -- which is exactly what happens when two incidents
+        # want the same GOES frame and the first is already reading it. Every
+        # key here is derived from the request, so the file already in place
+        # is the file we just fetched: drop ours and use theirs.
+        part.unlink(missing_ok=True)
+        if not path.exists():
+            raise
 
 # west, south, east, north -- the order the FIRMS area API wants.
 DEMO_BBOX = (-121.80, 39.60, -121.40, 39.95)  # Camp Fire origin, Butte County CA
@@ -194,8 +218,7 @@ def fetch_hotspots(
     else:
         body = _get(path)
         if use_cache and when:
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            cached.write_text(body, encoding="utf-8")
+            cache_write(cached, body)
 
     hotspots = []
     for row in csv.DictReader(io.StringIO(body)):
@@ -220,6 +243,27 @@ def fetch_many(
         hotspots.extend(fetch_hotspots(source=source, **kwargs))
     hotspots.sort(key=lambda h: h.acq_time)
     return hotspots
+
+
+def fetch_live(
+    bbox: tuple[float, float, float, float] = DEMO_BBOX,
+    sources: tuple[str, ...] = LIVE_SOURCES,
+    days: int = 2,
+) -> list[Hotspot]:
+    """Newest NRT detections over a window that spans UTC midnight.
+
+    A dateless query means *today* in UTC, and NRT publishes a pass a few
+    hours after it happens -- so from 00:00Z until mid-morning "latest" is an
+    empty CSV, which reads exactly like "no fires here". At 01:27Z this
+    returned 0 detections for the whole of CONUS while the previous UTC day
+    had 911. Ask for yesterday as well and let the caller pick the newest
+    pass, which is what every consumer here already does.
+
+    Never disk-cached: the date is today's, but the feed behind it moves.
+    """
+    start = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
+    return fetch_many(sources, bbox=bbox, start_date=start, days=days,
+                      use_cache=False)
 
 
 def to_feature_collection(hotspots: list[Hotspot]) -> dict:

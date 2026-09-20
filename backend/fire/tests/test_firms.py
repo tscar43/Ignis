@@ -70,3 +70,18 @@ def test_rejects_a_flipped_bbox_before_spending_a_request():
 def test_rejects_a_day_range_the_api_will_not_serve():
     with pytest.raises(ValueError, match="API limit"):
         firms.fetch_hotspots(days=firms.MAX_DAY_RANGE + 1)
+
+
+def test_live_window_spans_utc_midnight_and_is_never_disk_cached(monkeypatch):
+    """A dateless query means today in UTC, and today is empty until the first
+    NRT pass of the day publishes -- which reads as "no fires anywhere"."""
+    seen = {}
+    monkeypatch.setattr(firms, "fetch_many",
+                        lambda sources, **kwargs: seen.update(kwargs) or [])
+
+    firms.fetch_live(bbox=(-125.0, 24.4, -66.9, 49.4))
+
+    today = datetime.now(timezone.utc).date()
+    assert seen["start_date"] < today  # yesterday, so a 00:30Z call still sees a pass
+    assert seen["days"] == 2
+    assert seen["use_cache"] is False  # the date is today's; the feed behind it moves

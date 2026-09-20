@@ -18,7 +18,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-from .firms import DEMO_BBOX
+from .firms import DEMO_BBOX, cache_write
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache"  # gitignored
 CRS = "EPSG:5070"
@@ -78,8 +78,7 @@ def fetch(layer: str, bbox=DEMO_BBOX, cell_m: int = 120, use_cache: bool = True,
                              params=params, timeout=180)
         if not response.headers.get("content-type", "").startswith("image"):
             raise RuntimeError(f"LANDFIRE {layer}: {response.text[:200]}")
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cached.write_bytes(response.content)
+        cache_write(cached, response.content)
 
     with rasterio.open(cached) as ds:
         return ds.read(1), ds.profile
