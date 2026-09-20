@@ -44,8 +44,10 @@ export default function FireHistory({ api, fireId = 'camp-2018' }) {
   const times = [...data.area.map(r => +new Date(r.observed_at)),
                  ...data.intensity.map(r => +new Date(r.bucket))]
   if (!times.length) return null
+  // Inset from the axis: the first bucket sits on the y-axis otherwise, and
+  // half its bar covers the tick labels.
   const x = scale([Math.min(...times), Math.max(...times)],
-                  [PAD.left, W - PAD.right])
+                  [PAD.left + 26, W - PAD.right])
 
   const series = bands.map(([key, color]) => [key, color,
     data.area.filter(r => r.band === key)

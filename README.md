@@ -81,57 +81,57 @@ request/response validation for free).
 
 ### Endpoints
 
-| Method | Path | Status |
+| Method | Path | Notes |
 |---|---|---|
-| GET | `/health` | ok + service name |
-| GET | `/fire?lat=&lon=&t=` | fire-risk GeoJSON (demo scenario in `demo_data/fire.json`) |
-| GET | `/shelters` | all demo shelters (`demo_data/shelters.json`) |
-| POST | `/geocode` | hardcoded demo addresses → coords; echoes coords if given |
-| POST | `/plan` | `{origin, household, t}` → route JSON (Milestone 2+) |
-| GET | `/scenario/{t}` | precomputed replay snapshots (Milestone 7) |
-| POST | `/chat` | agent endpoint, LLM key stays server-side (Milestone 8) |
+| GET | `/health` | liveness |
+| GET | `/ready` | validates every bundled offline demo, including each replay offset |
+| GET | `/fire` | `mode=demo\|replay\|live`, `t=T0\|H1\|H3\|H6` |
+| GET | `/fires` | national sweep, every active CONUS fire |
+| GET | `/palisades` | model-vs-truth fixture, never hits the network |
+| GET | `/scenario/{t}` | one replay frame, no routes |
+| GET | `/shelters` | `source=demo\|fema` |
+| GET | `/shelters/catalog` | with per-shelter access report |
+| GET | `/evacuations` | `mode`, optional `lat`/`lon` |
+| POST | `/plan` | route plan; four live-mode gates, see the API guide |
+| POST | `/geocode` | two bundled demo addresses only |
+| POST | `/chat` | Claude-backed evacuation assistant |
+| GET | `/history` | which fires have stored history (TigerData) |
+| GET | `/history/{fire_id}` | burn intensity and modelled area over time |
+| GET | `/demo/palisades` | demo metadata |
+| POST | `/demo/palisades/plan` | `apply_evacuation_orders` toggles the comparison |
 
-`/plan`, `/scenario/{t}`, and `/chat` currently return **501 Not Implemented**
-until their milestones land.
+Routing runs over a cached OpenStreetMap drive network (Paradise: 1,279 nodes,
+2,863 directed edges; Palisades has its own). Requests are offline; the
+synthetic fixture is still reachable through `IGNIS_GRAPH_PATH`. Shelters are
+fictional demonstration locations placed on the road network.
 
 CORS is enabled for `http://localhost:5173` and `http://localhost:3000`.
+Details and the live-mode 503 gates: [backend/api/README.md](backend/api/README.md).
+
+### Optional credentials
+
+Both are optional and independent. Without either, the feature returns 503
+with an actionable message and nothing else is affected.
+
+| Variable | Enables |
+|---|---|
+| `FIRMS_MAP_KEY` | live satellite detections (`mode=live`, `/fires`) |
+| `ANTHROPIC_API_KEY` | `POST /chat` |
+| `TIGERDATA_URL` | `/history` (TimescaleDB); seed with `python -m backend.api.timeseries seed` |
+
+Copy `.env.example` to `.env` and fill in what you need. On Windows PowerShell
+do **not** append with `>>` — 5.1 writes UTF-16 and silently corrupts the file.
+
+### The assistant
+
+`POST /chat` takes `{messages, mode}` and returns `{reply, plan}`. It has one
+tool, and that tool calls the `/plan` endpoint function itself rather than a
+copy of it, so the assistant inherits every gate `/plan` has and cannot
+describe a route the router would refuse. `plan` is a full `PlanResponse` when
+it routed during that turn, which the map draws.
 
 ### Tests
 
 ```bash
-# from the repo root
 .venv/Scripts/python -m pytest
 ```
-
-## API integration update (supersedes the endpoint status above)
-
-The HTTP API now consumes the merged fire engine. See
-[backend/api/README.md](backend/api/README.md) for current setup and behavior.
-GET /fire supports demo, live (5-minute cache with last-good fallback), and
-replay modes. GET /scenario/{t} serves the four published fire replay frames.
-Fire payloads retain their exact contract and additive fields.
-
-Routing currently uses isolated synthetic road/shelter fixtures under
-backend/routing/demo/. It still needs a real road cache and approved shelters;
-the default origin has no eligible route under the published demo hazards.
-The API returns 422 in that case. POST /chat awaits the frontend-owned agent.
-
-Run ./.venv/Scripts/python.exe -m pytest -q to check the integration offline.
-
-## Demo routing update
-
-The default demo origin now returns a route plan using the published demo fire
-polygons and a synthetic outer bypass. This supersedes the routing limitation
-above. Replay T0 still returns 422 because all fictional shelters are inside
-the current fire. See [the API guide](backend/api/README.md) for a working
-request and agent error handling. `/chat` remains a frontend-owned 501 stub.
-
-## Real-road routing update
-
-`/plan` now defaults to the cached OpenStreetMap drive network for Paradise,
-California (1,279 nodes, 2,863 directed edges). This supersedes the synthetic-road
-description above. Requests remain offline and the synthetic fixture remains
-available explicitly through `IGNIS_GRAPH_PATH`. Shelters are still fictional;
-this is local demo coverage, not nationwide routing. See
-[road cache details](backend/routing/osm/README.md) and the
-[API guide](backend/api/README.md).
