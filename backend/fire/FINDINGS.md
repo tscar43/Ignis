@@ -257,11 +257,30 @@ the implementation, never the physics.
 
 ## Ground truth, and why the absolute numbers are low
 
+> **Every IoU recorded in this document predates the 2026-09-20 audit and has
+> not been re-measured.** Three fixes change all of them: the truth mask used
+> to stop short of the validation pass across UTC midnight, a 12 h window was
+> scored against a 6 h simulation, and grid north was compared against true
+> north. Re-fit and re-run before quoting any number below.
+
 Truth is the union of FIRMS detections up to the validation time, not a NIFC
-perimeter. A detection is an *actively burning* pixel, so cells that burned and
-cooled drop out and the observed footprint understates burned area. Absolute
-IoU is therefore pessimistic; the ablation is the honest comparison because the
-bias applies to every configuration equally.
+perimeter. A detection is an *actively burning* pixel.
+
+The usual statement of the limitation -- that cells which burned and cooled
+drop out -- is not quite right here, and saying it that way oversells the
+problem in one direction while hiding a real one. `validate.observed()`
+accumulates every detection up to the validation time, so a cell that burned
+and cooled is still in the mask that caught it burning. What is genuinely
+missed is fire that never coincided with an overpass at all. The footprint
+still understates burned area and absolute IoU is still pessimistic; the
+reason is coverage, not cooling.
+
+The ablation is a FAIR comparison -- every configuration meets the same
+imperfect mask -- but that is not the same as an unbiased one. A truth mask
+built from 375 m detection pixels can systematically favour one footprint
+shape over another, and the configurations differ precisely in shape. Shared
+bias makes the contest even; it does not prove the winner would still win
+against a perfect mask.
 
 ## Open, deliberately not started
 

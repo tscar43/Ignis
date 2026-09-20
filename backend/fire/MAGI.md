@@ -61,9 +61,16 @@ window where shape beats size is Camp +11.4 h, where CASPER-3 predicts less than
 MAJORITY, BALTHASAR-2 and ADVISORY and still wins — the ablation's wind-alone
 result showing up in the ensemble.
 
-So the ensemble is kept for the **uncertainty band, not for accuracy**. Do not
-re-tune the doctrines to win that table; that is fitting three models to two
-fires, which is the mistake `validate.py` exists to catch.
+So the ensemble is kept for the **disagreement band, not for accuracy**. Call
+it disagreement, not uncertainty: three settings of one kernel sharing a seed,
+a wind field, a grid and a solver can only disagree about what they were set
+up to disagree about, and nothing here is calibrated against observed outcome
+frequency. "The models disagree beyond here" is supportable. "We are 90% sure
+the fire stays inside CONFIRMED" is not, and no wording in a pitch should
+imply it.
+
+Do not re-tune the doctrines to win that table either; that is fitting three
+models to two fires, which is the mistake `validate.py` exists to catch.
 
 ## Non-obvious facts that cost time to establish
 
@@ -101,8 +108,10 @@ fires, which is the mistake `validate.py` exists to catch.
    agree for structural reasons and the ADVISORY-to-CONFIRMED gap is narrower
    than the truth. Balthasar is the one to cut: its gains only increase rate,
    so its arrival times sit pointwise below Melchior's and it can never set
-   CONFIRMED (see below). `rothermel.py` is independently derived, carries no
-   fitted R0, and is validated against the BehavePlus core to a constant 1.029.
+   CONFIRMED (see below). `rothermel.py` is independently derived and carries
+   no fitted R0, which is the property that matters here. Its BehavePlus
+   agreement figure has been withdrawn -- it was measured with mineral damping
+   omitted, on reasoning the reference source disproves; see FINDINGS.md.
    Not done yet -- it needs a per-cell rate path, since Rothermel gives a rate
    per fuel code where `spread.py` takes one global R0. Losing Balthasar also
    loses the protective upper bound; Rothermel may or may not subsume it, and
