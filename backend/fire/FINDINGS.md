@@ -219,28 +219,41 @@ reference**, median 0.495.
   up to 60% fast. It is now derived from live herbaceous moisture the way the
   reference does it: green at 120%, fully cured at 30%, linear between. One
   fewer knob.
-- **The mineral damping coefficient is deliberately not applied.** Rothermel
-  gives eta_s = 0.174 S_e^-0.19, which is 0.4174 at S_e = 0.01 -- a factor of
-  2.4 on reaction intensity. The reference does not appear to apply it, and
-  the arithmetic says the reference is right: reproducing its reaction
-  intensity for TL8 while keeping the coefficient demands a net fuel load of
-  0.578 lb/ft2, and TL8's whole oven-dry load is 0.381. No net loading can
-  exceed the load it comes from. Gamma' was checked two ways (imperial, and
-  GTR-371's metric reformulation) and is not the culprit. Unresolved between
-  the published equation and the reference implementation; matching the
-  implementation people actually fight fires with is the defensible side.
+- **The mineral damping coefficient is applied. It previously was not, on a
+  reason that turned out to be false.** Rothermel gives eta_s =
+  0.174 S_e^-0.19, which is 0.4174 at S_e = 0.01 -- a factor of 2.4 on
+  reaction intensity. This module omitted it, recording that the reference
+  does not appear to apply it either. The reference does apply it.
+  `surfaceFireReactionIntensity.cpp` in firelab/behave computes
+  `etaS_[i] = 0.174 / pow(weightedSilica[i], 0.19)`, caps it at 1.0, and
+  multiplies it into `reactionIntensityForLifeState_[i]`; and
+  `surfaceFuelbedIntermediates.cpp` builds its weighted load from
+  `loadDead_[i] * (1.0 - totalSilicaContent_)`. Both corrections, exactly as
+  Rothermel (1972) and Albini (1976) give them. The coefficient is now in.
 
-**After the fixes: every one of the 40 models agrees with the BehavePlus core
-to a constant 1.029, range 1.028-1.030.** Independent of wind speed, so the
-residual sits in the no-wind rate rather than the wind factor. Bulk density,
-characteristic SAV and packing ratio all match the reference exactly, so it is
-a single unidentified scalar rather than a structural difference. 2.9% is well
-inside the model's own uncertainty, and being constant it cancels out of every
-relative comparison -- which is all the ensemble asks of it. Pinned by a test
-so it cannot drift silently.
+  What is still unexplained is the arithmetic that justified leaving it out:
+  that reproducing the reference's TL8 reaction intensity with eta_s in place
+  needs a net load of 0.578 lb/ft2 against TL8's total oven-dry load of 0.381.
+  Gamma-prime was checked two ways and is not the culprit. The likeliest
+  explanation is a mismatched comparison setup, but the setup is not on disk
+  and the check cannot be repeated. Two published sources agreeing outweigh
+  one unreproducible internal reconciliation, which is why the code follows
+  them -- but treat this as open, not settled.
 
-Still worth knowing: agreement with BehavePlus is not agreement with a fire.
-This validates the implementation, not the physics.
+**WITHDRAWN: the "every one of the 40 models agrees with the BehavePlus core
+to a constant 1.029, range 1.028-1.030" result.** It was measured with mineral
+damping omitted, on the reasoning disproved above, and there is no reference
+rate table or runnable comparison checked into this repository to re-measure
+it against. It is not adjusted, scaled or re-derived here -- it is removed.
+
+What survives from that work and is still checked: every load, SAV, depth and
+extinction moisture against GTR-153 table 7, and characteristic SAV, bulk
+density and packing ratio against the published per-model pages.
+
+Re-establishing an agreement figure means committing a reference rate table
+and the script that compares against it. Until then, quote no ratio. And the
+old caveat still stands twice over: agreement with BehavePlus would validate
+the implementation, never the physics.
 
 ## Ground truth, and why the absolute numbers are low
 
@@ -258,10 +271,11 @@ bias applies to every configuration equally.
   moved unilaterally.
 - **GOES seeding is not validated against IoU**, for the reason above. The
   `PIXEL_M` constant is the open knob.
-- **No HTTP endpoint exists** anywhere in the repo. The brief asks for one, but
-  the backend teammate may want to own the app entry point, so ask first.
-  `risk_payload()` also refetches everything per call; an endpoint needs a TTL
-  cache to be usable live.
+- ~~**No HTTP endpoint exists** anywhere in the repo.~~ Out of date: the API
+  layer landed and this note did not move with it. `backend/main.py` serves
+  `/fire`, `/fires`, `/palisades` and the replay frames, with the TTL cache
+  this note asked for in `backend/api/fire_service.py`. Do not repeat the old
+  sentence in a pitch -- it was true for about a day.
 
 ## Session log
 

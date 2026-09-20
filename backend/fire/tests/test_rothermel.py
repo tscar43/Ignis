@@ -109,19 +109,34 @@ def test_six_size_class_bins_not_three():
     assert rothermel._sav_bin(109.0) != rothermel._sav_bin(30.0)
 
 
-def test_mineral_damping_is_deliberately_not_applied():
-    """Guard against someone reinstating it from the published equation.
+def test_mineral_damping_matches_the_published_coefficient():
+    """eta_s = 0.174 S_e^-0.19, capped at 1.0, and actually reaching the rate.
 
-    Rothermel gives eta_s = 0.174 S_E^-0.19 = 0.4174 at S_E = 0.01. Applying
-    it puts this model a factor of 2.4 under the BehavePlus core, and the
-    arithmetic says BehavePlus is right: matching its reaction intensity for
-    TL8 with the coefficient in place needs a net fuel load of 0.578 lb/ft2
-    when TL8's entire oven-dry load is 0.381.
+    This test used to assert the opposite -- that the coefficient was absent --
+    on the grounds that the BehavePlus core omits it. It does not: it computes
+    etaS as 0.174/pow(silica, 0.19), caps it at 1, and multiplies it into
+    reaction intensity, on top of the (1 - S_T) net load. See
+    `rothermel.MINERAL_DAMPING_APPLIED` for the quoted source.
+
+    What this pins is the coefficient's value and the fact that it is wired
+    in. It is NOT a comparison against BehavePlus: no reference rate table
+    lives in this suite, which is why the old 1.029 agreement figure has been
+    withdrawn rather than re-pinned.
     """
-    assert rothermel.MINERAL_DAMPING_APPLIED is False
-    source = Path(rothermel.__file__).read_text(encoding="utf-8")
-    body = source.split("def no_wind_no_slope_rate")[1]
-    assert "S_E ** -0.19" not in body
+    assert rothermel.MINERAL_DAMPING_APPLIED is True
+    assert rothermel.mineral_damping(0.01) == pytest.approx(0.4174, abs=1e-4)
+    assert rothermel.mineral_damping(0.0001) == 1.0  # capped, never amplifying
+
+    # Wired in, not merely defined: dropping it changes the rate by its own
+    # factor, which is the 2.4x that made its absence worth arguing about.
+    with_damping = rothermel.no_wind_no_slope_rate(TL1)
+    rothermel.MINERAL_DAMPING_APPLIED = False
+    try:
+        without = rothermel.no_wind_no_slope_rate(TL1)
+    finally:
+        rothermel.MINERAL_DAMPING_APPLIED = True
+    assert with_damping == pytest.approx(without * rothermel.mineral_damping(),
+                                         rel=1e-9)
 
 
 def test_live_extinction_moisture_exceeds_the_tabulated_dead_value():

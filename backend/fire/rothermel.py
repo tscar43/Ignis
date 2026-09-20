@@ -42,10 +42,17 @@ domain; they were cross-checked against the encoding in the Pyregence
 `pyretechnics` project, which is EPL-2.0 and is *not* vendored here.
 
 Validation, in full in FINDINGS.md: every load, SAV, depth and extinction
-moisture checked against GTR-153 table 7; characteristic SAV and packing ratio
-against the published per-model pages; spread rates against the BehavePlus
-computational core for all 40 models, where they agree to a constant 1.029.
-That validates the implementation, not the physics.
+moisture checked against GTR-153 table 7, and characteristic SAV and packing
+ratio against the published per-model pages. Those still hold.
+
+The spread-rate comparison does NOT. It claimed all 40 models agreeing with
+the BehavePlus core to a constant 1.029, and that number was measured while
+this module omitted mineral damping on the stated grounds that BehavePlus
+omits it too -- which the reference source disproves (see
+`MINERAL_DAMPING_APPLIED`). The coefficient is applied now, no rate table or
+runnable comparison against BehavePlus is checked in here, and the ratio has
+been withdrawn rather than adjusted. Do not quote an agreement figure for
+this module until one can be re-measured and committed alongside it.
 """
 
 from __future__ import annotations
@@ -58,18 +65,39 @@ RHO_P = 32.0             # oven-dry particle density, lb/ft^3
 S_T = 0.0555             # total mineral content, fraction
 S_E = 0.01               # effective (silica-free) mineral content, fraction
 
-# Rothermel gives a mineral damping coefficient eta_s = 0.174 * S_E^-0.19,
-# which at S_E = 0.01 is 0.4174 -- a factor of 2.4 off reaction intensity.
-# **It is deliberately not applied**, because the BehavePlus core does not
-# appear to apply it either, and the arithmetic says BehavePlus is right:
-# reproducing its reaction intensity for TL8 while keeping this coefficient
-# demands a net fuel load of 0.578 lb/ft^2, and TL8's entire oven-dry load is
-# 0.381. No net loading can exceed the load it comes from. Gamma' was checked
-# two ways (imperial, and GTR-371's metric reformulation) and is not the
-# culprit. Recorded in FINDINGS.md as unresolved between the published
-# equation and the reference implementation; matching the implementation
-# everyone fights fires with is the defensible side of that.
-MINERAL_DAMPING_APPLIED = False
+# Mineral damping, eta_s = 0.174 * S_E^-0.19, capped at 1.0. At S_E = 0.01
+# that is 0.4174 -- a factor of 2.4 on reaction intensity, so whether it is
+# applied is not a detail.
+#
+# It IS applied, and it used to not be. The reason given for omitting it was
+# that the BehavePlus core did not appear to apply it either. That reason is
+# false. The Forest Service implementation computes it in `calculateEtaS()`
+#
+#     etaS_[i] = 0.174 / pow(weightedSilica[i], 0.19);
+#     if (etaS_[i] > 1.0) { etaS_[i] = 1.0; }
+#
+# and multiplies it into reaction intensity per life state
+#
+#     reactionIntensityForLifeState_[i] =
+#         gamma * weightedFuelLoad[i] * weightedHeat[i] * etaM_[i] * etaS_[i];
+#
+# -- surfaceFireReactionIntensity.cpp, firelab/behave. It also builds
+# `weightedFuelLoad` from NET load, `wnDead[i] = loadDead_[i] * (1.0 -
+# totalSilicaContent_)`, in surfaceFuelbedIntermediates.cpp. So the reference
+# applies BOTH corrections: the (1 - S_T) net load this module already had,
+# and eta_s on top of it. Rothermel (1972) and Albini (1976) say the same.
+#
+# ponytail: what this does NOT do is explain the TL8 arithmetic that the old
+# comment rested on -- that reproducing "its" reaction intensity with eta_s in
+# place needs a net load of 0.578 lb/ft^2 against TL8's total of 0.381. Two
+# published sources agreeing outrank one internal reconciliation whose
+# comparison setup is no longer on disk, which is why the coefficient is in;
+# but the reconciliation is unfinished, not resolved. Finishing it means
+# checking in a reference rate table and a runnable comparison, and until
+# that exists no agreement ratio with BehavePlus should be quoted from this
+# module. The old 1.029 figure has been withdrawn from FINDINGS.md for
+# exactly that reason.
+MINERAL_DAMPING_APPLIED = True
 HEAT_CONTENT = 8000.0    # low heat content, Btu/lb
 # ...for 39 of the 40 models. GR6 is 9000, alone in the set. Verified against
 # Scott & Burgan 2005 RMRS-GTR-153 table 7, which is also where every load,
@@ -307,11 +335,13 @@ def no_wind_no_slope_rate(code: int, moisture: Moisture = Moisture()) -> float:
     ratio = beta / beta_op if beta_op > 0 else 0.0
     gamma = gamma_max * ratio ** exponent * math.exp(exponent * (1.0 - ratio))
 
+    eta_s = mineral_damping()
     reaction = 0.0
     for category, m_x in ((DEAD, m_x_dead), (LIVE, m_x_live)):
         w_n = sum(g_ij[j] * w_o[j] * (1.0 - S_T) for j in category)
         m_f_i = sum(f_ij[j] * m_f[j] for j in category)
-        reaction += w_n * heat_content(code) * _moisture_damping(m_f_i, m_x)
+        reaction += (w_n * heat_content(code)
+                     * _moisture_damping(m_f_i, m_x) * eta_s)
     i_r = gamma * reaction
 
     # Propagating flux ratio, then the heat sink it has to overcome.
@@ -324,6 +354,15 @@ def no_wind_no_slope_rate(code: int, moisture: Moisture = Moisture()) -> float:
                      for j in category if sigma[j] > 0)
         for c, category in enumerate((DEAD, LIVE)))
     return i_r * xi / heat_sink if heat_sink > 0 else 0.0
+
+
+def mineral_damping(s_e: float = S_E) -> float:
+    """eta_s. Capped at 1.0 the way the reference caps it: the expression runs
+    above 1 for very clean fuel, and a damping coefficient that amplifies is
+    not damping."""
+    if not MINERAL_DAMPING_APPLIED:
+        return 1.0
+    return min(0.174 * s_e ** -0.19, 1.0)
 
 
 def wind_slope_factors(code: int, wind_ft_per_min: float, slope_tan: float,
