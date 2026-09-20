@@ -15,7 +15,7 @@ modelling rules this file does not repeat.
 | `backend/fire/`, `backend/weather/` | Justin (`jngo1129`) | **do not edit** |
 | `demo_data/` | Justin — these are generated outputs | **do not edit**, do not hand-edit the JSON |
 | `contracts/` | shared, currently empty | needs all three to agree |
-| backend API / app entry point | unclaimed — see below | — |
+| backend API / app entry point | backend agent (this session) | see backend/api/AGENTS.md |
 | frontend / map | unclaimed | — |
 | `.gitignore`, `.vscode/`, `.mcp.json`, root `README.md` | shared | add to them, don't rewrite them |
 

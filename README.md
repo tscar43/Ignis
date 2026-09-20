@@ -59,3 +59,69 @@ cp .env.example .env                        # then add a free FIRMS map key
 Python 3.12 in `.venv`, called by path — a bare `python` here is the system
 3.14 with none of the geospatial wheels. Deps in
 `backend/fire/requirements.txt`.
+
+## Backend branch integration
+
+The backend API described below is included from routing-backend. The fire engine's HTTP integration remains separate.
+
+## Backend
+
+`backend/` — FastAPI service that serves fire-risk GeoJSON, shelters, geocoding,
+and route plans (units: **minutes** and **kilometers**, geometry **EPSG:4326**).
+
+### Run
+
+```bash
+# from the repo root, using the project venv
+.venv/Scripts/uvicorn backend.main:app --reload
+```
+
+Interactive API docs at `http://localhost:8000/docs` (Pydantic models give
+request/response validation for free).
+
+### Endpoints
+
+| Method | Path | Status |
+|---|---|---|
+| GET | `/health` | ok + service name |
+| GET | `/fire?lat=&lon=&t=` | fire-risk GeoJSON (demo scenario in `demo_data/fire.json`) |
+| GET | `/shelters` | all demo shelters (`demo_data/shelters.json`) |
+| POST | `/geocode` | hardcoded demo addresses → coords; echoes coords if given |
+| POST | `/plan` | `{origin, household, t}` → route JSON (Milestone 2+) |
+| GET | `/scenario/{t}` | precomputed replay snapshots (Milestone 7) |
+| POST | `/chat` | agent endpoint, LLM key stays server-side (Milestone 8) |
+
+`/plan`, `/scenario/{t}`, and `/chat` currently return **501 Not Implemented**
+until their milestones land.
+
+CORS is enabled for `http://localhost:5173` and `http://localhost:3000`.
+
+### Tests
+
+```bash
+# from the repo root
+.venv/Scripts/python -m pytest
+```
+
+## API integration update (supersedes the endpoint status above)
+
+The HTTP API now consumes the merged fire engine. See
+[backend/api/README.md](backend/api/README.md) for current setup and behavior.
+GET /fire supports demo, live (5-minute cache with last-good fallback), and
+replay modes. GET /scenario/{t} serves the four published fire replay frames.
+Fire payloads retain their exact contract and additive fields.
+
+Routing currently uses isolated synthetic road/shelter fixtures under
+backend/routing/demo/. It still needs a real road cache and approved shelters;
+the default origin has no eligible route under the published demo hazards.
+The API returns 422 in that case. POST /chat awaits the frontend-owned agent.
+
+Run ./.venv/Scripts/python.exe -m pytest -q to check the integration offline.
+
+## Demo routing update
+
+The default demo origin now returns a route plan using the published demo fire
+polygons and a synthetic outer bypass. This supersedes the routing limitation
+above. Replay T0 still returns 422 because all fictional shelters are inside
+the current fire. See [the API guide](backend/api/README.md) for a working
+request and agent error handling. `/chat` remains a frontend-owned 501 stub.

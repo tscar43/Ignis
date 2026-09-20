@@ -1,6 +1,3 @@
-node_modules/
-dist/
-.next/
 # Secrets
 .env
 .env.local
@@ -33,8 +30,18 @@ build/
 .next/
 *.log
 .vite/
+.playwright-mcp/
 
 # OS / editor
 .DS_Store
 Thumbs.db
-.playwright-mcp/
+
+# Backend tooling
+*.graphml
+!demo_data/graph.graphml
+htmlcov/
+.coverage
+
+# Small backend-owned synthetic routing fixture
+!backend/routing/demo/graph.graphml
+cache/

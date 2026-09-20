@@ -1,0 +1,81 @@
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+ReplayTime = Literal['T0', 'H1', 'H3', 'H6']
+
+
+class Model(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+
+
+class Origin(Model):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    label: str = ''
+
+
+class Household(Model):
+    occupants: int = Field(default=1, ge=1, le=100)
+    has_vehicle: bool = True
+    accepts_pets: bool = False
+    wheelchair_accessible: bool = False
+
+
+class PlanRequest(Model):
+    origin: Origin
+    household: Household = Field(default_factory=Household)
+    t: ReplayTime = 'T0'
+    mode: Literal['demo', 'replay', 'live'] = 'demo'
+
+
+class Shelter(Origin):
+    id: str
+    name: str
+    accepts_pets: bool
+    accessible: bool
+    capacity: int = Field(ge=0)
+
+
+class DataAsOf(Model):
+    firms: str
+    weather: str
+
+
+class RouteGeometry(Model):
+    type: Literal['LineString'] = 'LineString'
+    coordinates: list[tuple[float, float]] = Field(min_length=2)
+
+
+class ExposureBreakdown(Model):
+    current: float = Field(default=0, ge=0)
+    h1: float = Field(default=0, ge=0)
+    h3: float = Field(default=0, ge=0)
+    h6: float = Field(default=0, ge=0)
+
+
+class Route(Model):
+    type: Literal['recommended', 'fastest']
+    geometry: RouteGeometry
+    travel_time_min: float = Field(ge=0)
+    distance_km: float = Field(ge=0)
+    exposure: float = Field(ge=0, le=1)
+    exposure_breakdown_km: ExposureBreakdown
+    named_roads: list[str]
+
+
+class PlanResponse(Model):
+    generated_at: str
+    data_as_of: DataAsOf
+    origin: Origin
+    destination: Shelter
+    routes: list[Route]
+    warnings: list[str]
+
+
+class GeocodeRequest(Model):
+    address: str = Field(min_length=1, max_length=300)
+
+
+class ChatRequest(Model):
+    messages: list[dict[str, str]] = Field(max_length=100)

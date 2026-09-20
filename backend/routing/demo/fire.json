@@ -1,0 +1,160 @@
+{
+  "generated_at": "2026-09-19T12:00:00Z",
+  "data_as_of": {
+    "firms": "synthetic",
+    "weather": "synthetic"
+  },
+  "fire_points": {
+    "type": "FeatureCollection",
+    "features": []
+  },
+  "risk_polygons": {
+    "current": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -121.596,
+                  39.767
+                ],
+                [
+                  -121.596,
+                  39.77
+                ],
+                [
+                  -121.604,
+                  39.77
+                ],
+                [
+                  -121.604,
+                  39.767
+                ],
+                [
+                  -121.596,
+                  39.767
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "h1": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -121.593,
+                  39.755
+                ],
+                [
+                  -121.593,
+                  39.773
+                ],
+                [
+                  -121.607,
+                  39.773
+                ],
+                [
+                  -121.607,
+                  39.755
+                ],
+                [
+                  -121.593,
+                  39.755
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "h3": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -121.59,
+                  39.753
+                ],
+                [
+                  -121.59,
+                  39.775
+                ],
+                [
+                  -121.61,
+                  39.775
+                ],
+                [
+                  -121.61,
+                  39.753
+                ],
+                [
+                  -121.59,
+                  39.753
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "h6": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -121.587,
+                  39.75
+                ],
+                [
+                  -121.587,
+                  39.778
+                ],
+                [
+                  -121.613,
+                  39.778
+                ],
+                [
+                  -121.613,
+                  39.75
+                ],
+                [
+                  -121.587,
+                  39.75
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "summary": {
+    "note": "Synthetic demo only; not real fire predictions or shelter availability."
+  }
+}
